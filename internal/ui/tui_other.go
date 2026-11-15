@@ -40,6 +40,10 @@ func (t *TUI) SetStatus(string) {}
 // SetLive tidak melakukan apa-apa (stub).
 func (t *TUI) SetLive(string, bool) {}
 
+// SetLiveInput tidak melakukan apa-apa (stub) - pratinjau ketikan langsung
+// hanya tersedia pada mode layar penuh unix (linux/darwin).
+func (t *TUI) SetLiveInput(string) {}
+
 // CommitLive tidak melakukan apa-apa (stub).
 func (t *TUI) CommitLive() {}
 
