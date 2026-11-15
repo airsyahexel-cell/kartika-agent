@@ -334,6 +334,11 @@ footer .brand{justify-content:center;margin-bottom:10px}
   if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
     lines.forEach(function(l){l.classList.add('on')});return;
   }
+  // kunci tinggi terminal ke ukuran akhir agar layout tidak bergeser saat mengetik
+  var tty=document.getElementById('tty');
+  lines.forEach(function(l){l.classList.add('on')});
+  tty.style.minHeight=tty.offsetHeight+'px';
+  lines.forEach(function(l){l.classList.remove('on')});
   var i=0;
   (function next(){if(i<lines.length){lines[i++].classList.add('on');setTimeout(next,i<4?650:900)}})();
 })();
