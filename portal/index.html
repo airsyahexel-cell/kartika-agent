@@ -2,176 +2,258 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#0c100a"/>
 <title>KARTIKA-AGENT — Tactical Autonomous Security &amp; Audit CLI</title>
 <meta name="description" content="Agen audit keamanan otonom bergaya taktis: source code, konfigurasi infrastruktur, dan postur endpoint HTTP. Golang 100% stdlib, MCP Client native, Zero-False Positive."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Sora:wght@400;600;700&display=swap" rel="stylesheet"/>
 <style>
-  :root{
-    --bg:#070b0a; --bg2:#0b1210; --panel:#0e1714; --line:#1d2f29;
-    --fg:#d7e4dd; --dim:#8aa39a; --acc:#34d399; --acc2:#22d3ee; --warn:#fbbf24; --crit:#f87171;
-    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  }
-  *{margin:0;padding:0;box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{background:var(--bg);color:var(--fg);font-family:var(--mono);line-height:1.65;font-size:15px}
-  a{color:var(--acc2);text-decoration:none}
-  a:hover{text-decoration:underline}
-  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
-  header{border-bottom:1px solid var(--line);background:rgba(7,11,10,.9);position:sticky;top:0;backdrop-filter:blur(6px);z-index:9}
-  .nav{display:flex;align-items:center;justify-content:space-between;height:60px}
-  .brand{color:var(--acc);font-weight:700;letter-spacing:1px}
-  .brand span{color:var(--dim)}
-  nav a{color:var(--dim);margin-left:20px;font-size:13px}
-  nav a:hover{color:var(--acc)}
-  .hero{padding:72px 0 56px;border-bottom:1px solid var(--line);background:
-    radial-gradient(1000px 400px at 70% -10%, rgba(52,211,153,.08), transparent)}
-  .tag{display:inline-block;border:1px solid var(--acc);color:var(--acc);font-size:12px;padding:3px 12px;border-radius:3px;letter-spacing:2px;margin-bottom:20px}
-  h1{font-size:clamp(26px,4vw,42px);letter-spacing:1px;line-height:1.25}
-  h1 em{font-style:normal;color:var(--acc)}
-  .sub{color:var(--dim);max-width:760px;margin:16px 0 28px}
-  .badges{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:32px}
-  .badge{border:1px solid var(--line);background:var(--bg2);color:var(--dim);font-size:12px;padding:4px 12px;border-radius:3px}
-  .badge b{color:var(--acc)}
-  .term{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)}
-  .term-bar{display:flex;gap:6px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--bg2)}
-  .dot{width:10px;height:10px;border-radius:50%;background:var(--line)}
-  .term-title{margin-left:8px;color:var(--dim);font-size:12px}
-  .term pre{padding:18px;font-size:12.5px;overflow-x:auto;color:var(--dim)}
-  .term .g{color:var(--acc)} .term .c{color:var(--acc2)} .term .y{color:var(--warn)} .term .r{color:var(--crit)} .term .w{color:var(--fg)}
-  .install{display:flex;align-items:center;gap:12px;background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:12px 16px;max-width:720px;margin-top:26px}
-  .install code{color:var(--fg);font-size:13px;flex:1;overflow-x:auto;white-space:nowrap}
-  .btn{background:var(--acc);color:#05130d;border:none;font-family:var(--mono);font-weight:700;font-size:12px;padding:8px 14px;border-radius:3px;cursor:pointer}
-  .btn:hover{filter:brightness(1.1)}
-  section{padding:64px 0;border-bottom:1px solid var(--line)}
-  h2{font-size:20px;color:var(--acc);letter-spacing:1px;margin-bottom:8px}
-  h2::before{content:"// ";color:var(--dim)}
-  .lead{color:var(--dim);margin-bottom:34px;max-width:760px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:22px}
-  .card h3{font-size:14px;color:var(--fg);margin-bottom:10px;letter-spacing:1px}
-  .card h3::before{content:"▶ ";color:var(--acc)}
-  .card p{color:var(--dim);font-size:13px}
-  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:18px}
-  th{text-align:left;color:var(--acc);border-bottom:1px solid var(--line);padding:10px 12px;letter-spacing:1px;font-size:12px}
-  td{border-bottom:1px solid var(--line);padding:10px 12px;color:var(--dim);vertical-align:top}
-  td code, p code, li code{background:var(--bg2);border:1px solid var(--line);border-radius:3px;padding:1px 6px;color:var(--fg);font-size:12.5px}
-  pre.block{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px;font-size:12.5px;color:var(--dim);overflow-x:auto;margin-top:18px}
-  .steps{counter-reset:st;list-style:none;margin-top:18px}
-  .steps li{counter-increment:st;margin-bottom:16px;color:var(--dim);padding-left:52px;position:relative}
-  .steps li::before{content:"[FASE " counter(st) "]";position:absolute;left:0;top:2px;color:var(--acc);font-size:12px;letter-spacing:1px}
-  .steps b{color:var(--fg)}
-  .note{border-left:3px solid var(--warn);background:rgba(251,191,36,.06);padding:14px 18px;color:var(--dim);font-size:13px;margin-top:26px;border-radius:0 4px 4px 0}
-  footer{padding:44px 0;color:var(--dim);font-size:12.5px;text-align:center}
-  footer .brand{display:block;margin-bottom:8px}
+:root{
+  --bg:#0c100a; --bg2:#121809; --panel:#161d0f; --line:#2a3320;
+  --fg:#e8e6d5; --dim:#a3a78f; --amber:#f0b429; --olive:#8fb339; --cyan:#5fd0c4; --crit:#ff6b5b;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:'Sora',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --pad:clamp(16px,4vw,32px);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:84px;-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;font-size:clamp(14.5px,1.6vw,16px);
+  padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right);overflow-x:hidden;
+  background-image:linear-gradient(rgba(143,179,57,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(143,179,57,.045) 1px,transparent 1px);
+  background-size:44px 44px}
+a{color:var(--cyan);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--amber);outline-offset:3px;border-radius:3px}
+code,pre,.mono{font-family:var(--mono)}
+.wrap{max-width:1140px;margin:0 auto;padding:0 var(--pad)}
+
+/* header */
+header{position:sticky;top:0;z-index:50;background:rgba(12,16,10,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top)}
+.nav{display:flex;align-items:center;justify-content:space-between;height:62px;gap:16px}
+.brand{font-family:var(--mono);font-weight:800;color:var(--amber);letter-spacing:.06em;display:flex;align-items:center;gap:10px;font-size:14px;white-space:nowrap}
+.brand i{width:10px;height:10px;background:var(--olive);border-radius:50%;box-shadow:0 0 0 4px rgba(143,179,57,.2);animation:ping 2.4s ease-in-out infinite}
+.brand small{color:var(--dim);font-weight:400}
+@keyframes ping{50%{box-shadow:0 0 0 8px rgba(143,179,57,0)}}
+nav ul{display:flex;gap:6px;list-style:none}
+nav a{color:var(--dim);font-size:13.5px;padding:8px 12px;border-radius:6px;display:block}
+nav a:hover{color:var(--fg);background:var(--panel);text-decoration:none}
+.menu{display:none;background:var(--panel);border:1px solid var(--line);color:var(--fg);width:44px;height:40px;border-radius:6px;cursor:pointer;font-size:18px}
+
+/* hero */
+.hero{padding:clamp(40px,8vw,88px) 0 clamp(40px,6vw,64px);position:relative}
+.hero::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(700px 360px at 85% 0%,rgba(240,180,41,.12),transparent 70%),radial-gradient(600px 300px at 0% 30%,rgba(143,179,57,.1),transparent 70%)}
+.hero .wrap{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:clamp(28px,5vw,56px);align-items:center}
+.tag{display:inline-block;font-family:var(--mono);font-size:12px;color:var(--olive);border:1px solid var(--olive);padding:4px 12px;border-radius:4px;margin-bottom:20px}
+h1{font-size:clamp(30px,5.2vw,56px);line-height:1.12;letter-spacing:-.02em;font-weight:700}
+h1 .hl{color:var(--amber)}
+.sub{color:var(--dim);margin:20px 0 26px;max-width:56ch}
+.sub b{color:var(--fg)}
+.cta{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:26px}
+.btn{font-family:var(--mono);font-weight:600;font-size:13px;padding:12px 18px;border-radius:6px;border:1px solid var(--amber);cursor:pointer;display:inline-block;min-height:44px;transition:transform .15s,background .15s}
+.btn.pri{background:var(--amber);color:#1a1300}
+.btn.pri:hover{background:#ffc94d;text-decoration:none}
+.btn.sec{background:transparent;color:var(--amber)}
+.btn.sec:hover{background:rgba(240,180,41,.1);text-decoration:none}
+.btn:active{transform:scale(.97)}
+.badges{display:flex;flex-wrap:wrap;gap:8px}
+.badge{font-size:12px;color:var(--dim);background:var(--bg2);border:1px solid var(--line);padding:5px 11px;border-radius:999px}
+.badge b{color:var(--olive);font-weight:600}
+
+/* terminal */
+.term{background:#0a0d07;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(240,180,41,.08);min-width:0}
+.term-bar{display:flex;align-items:center;gap:7px;padding:11px 14px;background:var(--bg2);border-bottom:1px solid var(--line)}
+.dot{width:11px;height:11px;border-radius:50%}
+.dot:nth-child(1){background:#ff6b5b}.dot:nth-child(2){background:#f0b429}.dot:nth-child(3){background:#8fb339}
+.term-title{margin-left:8px;color:var(--dim);font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.term pre{padding:16px;font-size:clamp(10.5px,1.25vw,12.5px);line-height:1.7;overflow-x:auto;color:var(--dim);min-height:360px;white-space:pre-wrap;word-break:break-word}
+.term .g{color:var(--olive)}.term .c{color:var(--cyan)}.term .y{color:var(--amber)}.term .r{color:var(--crit)}.term .w{color:var(--fg)}
+.cur{display:inline-block;width:8px;height:1em;background:var(--amber);vertical-align:-2px;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.l{display:none}.l.on{display:block}
+
+.install{display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px 8px 8px 14px;max-width:640px}
+.install code{flex:1;font-size:12.5px;color:var(--fg);overflow-x:auto;white-space:nowrap;scrollbar-width:none;min-width:0}
+.install code::-webkit-scrollbar{display:none}
+.install .btn{padding:9px 14px;min-height:38px;background:var(--amber);color:#1a1300}
+
+/* sections */
+section{padding:clamp(48px,8vw,84px) 0;border-top:1px solid var(--line)}
+h2{font-size:clamp(22px,3.2vw,32px);letter-spacing:-.01em;line-height:1.2;margin-bottom:10px}
+h2 span{color:var(--olive);font-family:var(--mono);font-weight:400;margin-right:8px}
+.lead{color:var(--dim);max-width:64ch;margin-bottom:34px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px}
+.card{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:10px;padding:22px;position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--olive)}
+.card.hot::before{background:var(--amber)}
+.card h3{font-size:15px;margin-bottom:10px;line-height:1.35}
+.card p{color:var(--dim);font-size:13.5px;line-height:1.7}
+.card p b{color:var(--fg);font-weight:600}
+code{background:#0a0d07;border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--amber);font-size:.85em;word-break:break-word}
+.card code{display:inline-block;margin:2px 0}
+
+/* pipeline */
+.pipe{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;counter-reset:p;margin-bottom:56px}
+.pipe div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;position:relative;font-size:13px;color:var(--dim)}
+.pipe div::before{counter-increment:p;content:"Tahap " counter(p);display:block;font-family:var(--mono);color:var(--amber);font-size:12px;margin-bottom:6px}
+.pipe b{color:var(--fg);display:block;margin-bottom:4px;font-size:13.5px}
+.pipe div:not(:last-child)::after{content:"";position:absolute;right:-13px;top:50%;width:14px;height:2px;background:var(--line)}
+
+.steps{list-style:none;counter-reset:s;display:grid;gap:12px;max-width:820px}
+.steps li{counter-increment:s;display:grid;grid-template-columns:42px 1fr;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;color:var(--dim);font-size:14px}
+.steps li::before{content:counter(s);display:grid;place-items:center;width:34px;height:34px;border-radius:8px;background:rgba(240,180,41,.12);color:var(--amber);font-family:var(--mono);font-weight:800}
+.steps b{color:var(--fg)}
+
+/* tables */
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin-top:28px;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
+th{text-align:left;background:var(--bg2);color:var(--amber);font-family:var(--mono);font-weight:600;font-size:12.5px;padding:12px 14px;border-bottom:1px solid var(--line)}
+td{padding:12px 14px;color:var(--dim);border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td b{color:var(--fg)}
+
+pre.block{background:#0a0d07;border:1px solid var(--line);border-radius:10px;padding:18px;font-size:12.5px;color:var(--dim);overflow-x:auto;margin-top:8px;line-height:1.7}
+.note{border:1px solid rgba(240,180,41,.4);background:rgba(240,180,41,.07);padding:16px 18px;border-radius:10px;color:var(--dim);font-size:13.5px;margin-top:34px}
+.note b{color:var(--amber)}
+
+footer{border-top:1px solid var(--line);padding:40px 0 calc(40px + env(safe-area-inset-bottom));color:var(--dim);font-size:12.5px;text-align:center}
+footer .brand{justify-content:center;margin-bottom:10px}
+
+/* tablet */
+@media(max-width:960px){
+  .hero .wrap{grid-template-columns:1fr}
+  .pipe{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .pipe div::after{display:none}
+  .term pre{min-height:0}
+}
+/* mobile */
+@media(max-width:720px){
+  .menu{display:block}
+  nav ul{display:none;position:absolute;left:0;right:0;top:100%;flex-direction:column;background:var(--bg);border-bottom:1px solid var(--line);padding:10px var(--pad) 16px}
+  nav ul.open{display:flex}
+  nav a{padding:14px 12px;font-size:15px}
+  .brand small{display:none}
+  .cta .btn{flex:1;text-align:center}
+}
+@media(max-width:480px){
+  .pipe{grid-template-columns:1fr}
+  .steps li{grid-template-columns:1fr}
+  .install{flex-direction:column;align-items:stretch;padding:10px}
+  .install .btn{width:100%}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>
 <body>
 
 <header>
   <div class="wrap nav">
-    <div class="brand">KARTIKA-AGENT <span>// TACTICAL CORE</span></div>
-    <nav>
-      <a href="#fitur">Fitur</a>
-      <a href="#arsitektur">Arsitektur</a>
-      <a href="#instalasi">Instalasi</a>
-      <a href="#konfigurasi">Konfigurasi</a>
+    <div class="brand"><i></i>KARTIKA-AGENT <small>// TACTICAL CORE</small></div>
+    <nav aria-label="Navigasi utama">
+      <button class="menu" id="menu" aria-label="Buka menu" aria-expanded="false">☰</button>
+      <ul id="links">
+        <li><a href="#fitur">Fitur</a></li>
+        <li><a href="#arsitektur">Arsitektur</a></li>
+        <li><a href="#instalasi">Instalasi</a></li>
+        <li><a href="#konfigurasi">Konfigurasi</a></li>
+      </ul>
     </nav>
   </div>
 </header>
 
+<main>
 <div class="hero">
   <div class="wrap">
-    <span class="tag">01 OFFENSIVE TECH / 03 CORE INFRA — AUTOMATED SECURITY AUDITING</span>
-    <h1>Tactical <em>Autonomous Security</em><br/>&amp; Audit CLI</h1>
-    <p class="sub">Agen audit keamanan otonom bergaya <b>Tactical Command &amp; Briefing Engine</b> untuk memeriksa
-      <em>source code</em>, konfigurasi infrastruktur, dan postur keamanan <em>endpoint</em> secara mandiri —
-      lengkap dengan verifikasi bukti (<em>zero false positive</em>) dan laporan SITREP siap mitigasi.</p>
-    <div class="badges">
-      <span class="badge"><b>Golang 100%</b> native stdlib</span>
-      <span class="badge"><b>MCP Client</b> JSON-RPC 2.0 over stdio</span>
-      <span class="badge"><b>Universal Provider</b> Ollama · vLLM · Groq · Gemini · OpenRouter · OpenAI</span>
-      <span class="badge"><b>Zero-False-Positive</b> evidence-based verification</span>
+    <div>
+      <span class="tag">Offensive Tech / Core Infra — Automated Security Auditing</span>
+      <h1>Agen audit keamanan <span class="hl">otonom</span> untuk terminal Anda</h1>
+      <p class="sub">Gaya <b>Tactical Command &amp; Briefing Engine</b>: memeriksa <em>source code</em>, konfigurasi infrastruktur, dan postur <em>endpoint</em> secara mandiri, lengkap dengan verifikasi bukti (<em>zero false positive</em>) dan laporan <b>SITREP</b> siap mitigasi.</p>
+      <div class="cta">
+        <a class="btn pri" href="#instalasi">Pasang sekarang</a>
+        <a class="btn sec" href="#fitur">Lihat fitur</a>
+      </div>
+      <div class="badges">
+        <span class="badge"><b>Golang 100%</b> native stdlib</span>
+        <span class="badge"><b>MCP Client</b> JSON-RPC 2.0 stdio</span>
+        <span class="badge"><b>Universal Provider</b> Ollama, vLLM, Groq, Gemini, OpenRouter, OpenAI</span>
+        <span class="badge"><b>Zero-False-Positive</b> evidence-based</span>
+      </div>
     </div>
 
-    <div class="term">
+    <div class="term" role="img" aria-label="Contoh sesi KARTIKA-AGENT menghasilkan laporan SITREP">
       <div class="term-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="term-title">operator@posko — kartika-agent</span></div>
-<pre><span class="c">[KARTIKA-AGENT // TACTICAL CORE v1.0]</span>
-STATUS : <span class="g">ONLINE</span> | ENGINE: llama-3.3-70b | MODUL AKTIF: 5 Built-in + 2 MCP
+<pre id="tty"><span class="l on c">[KARTIKA-AGENT // TACTICAL CORE v1.0]</span>
+<span class="l on">STATUS : <span class="g">ONLINE</span> | ENGINE: llama-3.3-70b | MODUL: 5 Built-in + 2 MCP</span>
 
-<span class="w">MISI></span> Audit postur keamanan pada http://target.local/login.aspx, verifikasi setiap kelemahan beserta bukti teknisnya, dan susun SITREP mitigasi.
+<span class="l on"><span class="w">MISI&gt;</span> Audit postur keamanan pada http://target.local/login.aspx, verifikasi setiap kelemahan beserta bukti teknisnya, dan susun SITREP mitigasi.</span>
 
-<span class="c">[FASE 1: RECON]</span>   Memetakan struktur target &amp; mengambil profil awal ...
-<span class="c">[FASE 2: VERIFY]</span>  Memvalidasi response headers, atribut cookie, dan struktur form HTML ...
-<span class="c">[FASE 3: REPORT]</span>  Menyusun SITREP dan rekomendasi hardening konfigurasi ...
+<span class="l"><span class="c">[FASE 1: RECON]</span>   Memetakan struktur target &amp; mengambil profil awal ...</span>
+<span class="l"><span class="c">[FASE 2: VERIFY]</span>  Memvalidasi response headers, atribut cookie, dan struktur form HTML ...</span>
+<span class="l"><span class="c">[FASE 3: REPORT]</span>  Menyusun SITREP dan rekomendasi hardening ...</span>
 
-====================================================================
-<span class="w">SITREP // LAPORAN HASIL AUDIT &amp; VERIFIKASI KEAMANAN</span>
-====================================================================
-<span class="r">[KRITIS]</span>  1. Transmisi Kredensial Tanpa Enkripsi (Cleartext HTTP)
-          • Bukti Verifikasi : Target merespons langsung di HTTP (Port 80)
-            tanpa header 'Strict-Transport-Security' maupun pengalihan HTTPS.
-<span class="y">[WASPADA]</span> 2. Kebocoran Sidik Jari Teknologi (Server Fingerprinting)
-          • Bukti Verifikasi : Header 'Server' dan 'X-AspNet-Version'
-            mengekspos versi spesifik IIS dan framework ASP.NET secara publik.
-<span class="y">[WASPADA]</span> 3. Ketiadaan Proteksi Anti-Clickjacking &amp; MIME Sniffing
-          • Bukti Verifikasi : Tidak ditemukan header 'X-Frame-Options',
-            'Content-Security-Policy', maupun 'X-Content-Type-Options'.
+<span class="l"><span class="w">SITREP // LAPORAN HASIL AUDIT &amp; VERIFIKASI KEAMANAN</span></span>
+<span class="l"><span class="r">[KRITIS]</span>  1. Transmisi Kredensial Tanpa Enkripsi (Cleartext HTTP)
+   • Bukti: target merespons di HTTP (Port 80) tanpa 'Strict-Transport-Security' maupun pengalihan HTTPS.</span>
+<span class="l"><span class="y">[WASPADA]</span> 2. Kebocoran Sidik Jari Teknologi
+   • Bukti: header 'Server' dan 'X-AspNet-Version' mengekspos versi IIS &amp; ASP.NET.</span>
+<span class="l"><span class="y">[WASPADA]</span> 3. Tanpa Proteksi Anti-Clickjacking &amp; MIME Sniffing
+   • Bukti: tidak ada 'X-Frame-Options', 'Content-Security-Policy', 'X-Content-Type-Options'.</span>
 
-REKOMENDASI MITIGASI:
-- Aktifkan HTTPS dengan HSTS, sembunyikan banner versi pada 'web.config',
-  dan terapkan security headers standar pada reverse proxy / IIS.
-====================================================================</pre>
+<span class="l"><span class="g">REKOMENDASI:</span> aktifkan HTTPS + HSTS, sembunyikan banner versi di 'web.config', terapkan security headers di reverse proxy / IIS.</span><span class="cur"></span></pre>
     </div>
-
+  </div>
+  <div class="wrap" style="margin-top:34px">
     <div class="install">
       <code id="cmd">curl -fsSL https://kartika-agent-portal.vercel.app/install.sh | bash</code>
-      <button class="btn" onclick="copyCmd()">SALIN</button>
+      <button class="btn" id="copy">SALIN</button>
     </div>
   </div>
 </div>
 
 <section id="fitur">
   <div class="wrap">
-    <h2>Paradigma Operasi</h2>
-    <p class="lead">Mission-driven, verifikasi berbasis bukti, dan bisa ditanam di mana saja — dari posko operator sampai CI/CD satuan.</p>
+    <h2>Paradigma operasi</h2>
+    <p class="lead">Berbasis misi, diverifikasi dengan bukti, dan bisa ditanam di mana saja — dari posko operator sampai CI/CD satuan.</p>
     <div class="grid">
-      <div class="card"><h3>MODE POSKO — Interactive Tactical Shell</h3>
-        <p>Operator memberi direktif misi langsung di terminal <code>MISI&gt;</code>; agen merespons dengan format <b>SITREP</b> yang tegas: Temuan, Bukti Validasi, Dampak, dan Langkah Mitigasi.</p></div>
-      <div class="card"><h3>MODE SENYAP — Headless <code>--mission</code></h3>
-        <p>Eksekusi satu-baris tanpa interaksi manual, cocok ditanamkan ke <b>CI/CD pipeline</b> untuk memblokir kode rentan naik ke produksi (exit code non-zero saat misi gagal).</p></div>
-      <div class="card"><h3>EVIDENCE-BASED VERIFICATION</h3>
-        <p>Agen tidak berhenti pada asumsi permukaan. Setiap indikasi kelemahan diverifikasi lewat alur logika kode, header/struktur respons aktual, lalu dicatat sebagai <b>Catatan Bukti Teknis</b> + patch perbaikan terukur.</p></div>
-      <div class="card"><h3>SOVEREIGN &amp; AGNOSTIC AI</h3>
-        <p>Standar <b>OpenAI-Compatible Chat Completions</b>: ganti <code>KARTIKA_API_URL</code>, <code>KARTIKA_API_KEY</code>, <code>KARTIKA_MODEL</code> untuk beralih antar-otak AI — tanpa mengubah kode.</p></div>
-      <div class="card"><h3>MODE AIR-GAPPED</h3>
-        <p>Di markas/satuan tanpa koneksi keluar, engine berjalan penuh di atas <b>Ollama</b> atau <b>vLLM</b> internal. Di fase pengujian, cukup arahkan ke Groq / Gemini / OpenRouter / OpenAI.</p></div>
-      <div class="card"><h3>EKSTENSIBEL VIA MCP</h3>
-        <p>Agen membaca <code>mcp.json</code>, menyalakan MCP Server eksternal sebagai child process, handshake <code>initialize</code>, lalu menyerap <code>tools/list</code> sebagai modul taktis tambahan — <b>tanpa menyentuh kode inti</b>.</p></div>
+      <div class="card hot"><h3>Mode Posko — shell taktis interaktif</h3>
+        <p>Beri direktif misi langsung di terminal <code>MISI&gt;</code>; agen membalas dengan format <b>SITREP</b>: Temuan, Bukti Validasi, Dampak, dan Langkah Mitigasi.</p></div>
+      <div class="card hot"><h3>Mode Senyap — headless <code>--mission</code></h3>
+        <p>Eksekusi satu baris tanpa interaksi, cocok untuk <b>CI/CD pipeline</b> agar kode rentan tidak naik ke produksi (exit code non-zero saat misi gagal).</p></div>
+      <div class="card"><h3>Verifikasi berbasis bukti</h3>
+        <p>Setiap indikasi kelemahan dicek lewat alur logika kode dan header/struktur respons aktual, lalu dicatat sebagai <b>Catatan Bukti Teknis</b> beserta patch perbaikan terukur.</p></div>
+      <div class="card"><h3>AI berdaulat &amp; agnostik</h3>
+        <p>Standar <b>OpenAI-Compatible Chat Completions</b>: ganti <code>KARTIKA_API_URL</code>, <code>KARTIKA_API_KEY</code>, <code>KARTIKA_MODEL</code> untuk beralih otak AI tanpa ubah kode.</p></div>
+      <div class="card"><h3>Mode air-gapped</h3>
+        <p>Tanpa koneksi keluar, engine berjalan penuh di <b>Ollama</b> atau <b>vLLM</b> internal. Untuk pengujian, arahkan ke Groq / Gemini / OpenRouter / OpenAI.</p></div>
+      <div class="card"><h3>Ekstensibel via MCP</h3>
+        <p>Membaca <code>mcp.json</code>, menyalakan MCP Server sebagai child process, handshake <code>initialize</code>, lalu menyerap <code>tools/list</code> — <b>tanpa menyentuh kode inti</b>.</p></div>
     </div>
   </div>
 </section>
 
 <section id="arsitektur">
   <div class="wrap">
-    <h2>Alur Pembentukan &amp; Runtime</h2>
-    <p class="lead">Lima tahap build pipeline dan siklus ReAct + Verification Loop di setiap misi.</p>
-<pre class="block">[Tahap 1: Inisialisasi Core Engine]        — setup modul Go &amp; environment (API_URL, API_KEY, MODEL)
-   ▼
-[Tahap 2: Built-in Tactical Modules]       — scan_dir, read_file, http_probe, write_file
-   ▼
-[Tahap 3: Integrasi MCP Stdio Bridge]      — parser mcp.json → spawn subprocess → JSON-RPC handshake → tool discovery
-   ▼
-[Tahap 4: ReAct Loop &amp; Verification]       — recon → inspect &amp; verify evidence → SITREP + remediation patch
-   ▼
-[Tahap 5: Cross-Compilation &amp; Distribusi]  — binary Linux/Windows/macOS → GitHub Releases → Vercel portal</pre>
+    <h2>Alur pembentukan &amp; runtime</h2>
+    <p class="lead">Lima tahap build pipeline, lalu siklus ReAct + Verification Loop di setiap misi.</p>
+    <div class="pipe">
+      <div><b>Core Engine</b>Setup modul Go &amp; environment (API_URL, API_KEY, MODEL)</div>
+      <div><b>Modul Taktis</b><code>scan_dir</code>, <code>read_file</code>, <code>http_probe</code>, <code>write_file</code></div>
+      <div><b>MCP Stdio Bridge</b>Parse mcp.json, spawn subprocess, handshake JSON-RPC, tool discovery</div>
+      <div><b>ReAct &amp; Verification</b>Recon, inspect &amp; verify, SITREP + patch</div>
+      <div><b>Distribusi</b>Binary Linux/Windows/macOS ke GitHub Releases lalu portal Vercel</div>
+    </div>
 
-    <h2 style="margin-top:44px">Siklus Eksekusi Misi</h2>
+    <h2>Siklus eksekusi misi</h2>
+    <p class="lead">Urutan yang dijalankan agen pada setiap misi.</p>
     <ol class="steps">
-      <li><b>Bootstrapping</b> — memuat konfigurasi LLM, membaca <code>mcp.json</code>, menyatukan modul bawaan + modul MCP ke satu registri JSON Schema.</li>
-      <li><b>Input Direktif Misi</b> — melalui terminal interaktif (mode posko) atau flag <code>--mission</code> (mode senyap).</li>
-      <li><b>Fase 1 RECON</b> — pemetaan struktur direktori (<code>scan_dir</code>) atau pengambilan profil target (<code>http_probe</code>).</li>
-      <li><b>Fase 2 INSPECT &amp; VERIFY</b> — membaca <em>source code</em> (<code>read_file</code>), membedah header, atribut cookie, dan elemen form HTML untuk memastikan kelemahan valid (menyingkirkan <em>false positive</em>).</li>
-      <li><b>Fase 3 REPORT &amp; REMEDIATE</b> — merangkum hasil validasi ke laporan <b>SITREP</b> dan menulis file patch/rekomendasi konfigurasi (<code>write_file</code>).</li>
+      <li><div><b>Bootstrapping</b> — memuat konfigurasi LLM, membaca <code>mcp.json</code>, menyatukan modul bawaan + MCP ke satu registri JSON Schema.</div></li>
+      <li><div><b>Input direktif misi</b> — lewat terminal interaktif (mode posko) atau flag <code>--mission</code> (mode senyap).</div></li>
+      <li><div><b>Fase 1 RECON</b> — memetakan struktur direktori (<code>scan_dir</code>) atau profil target (<code>http_probe</code>).</div></li>
+      <li><div><b>Fase 2 INSPECT &amp; VERIFY</b> — membaca <em>source code</em> (<code>read_file</code>), membedah header, atribut cookie, dan form HTML untuk menyingkirkan <em>false positive</em>.</div></li>
+      <li><div><b>Fase 3 REPORT &amp; REMEDIATE</b> — merangkum hasil ke <b>SITREP</b> dan menulis file patch/rekomendasi (<code>write_file</code>).</div></li>
     </ol>
   </div>
 </section>
@@ -179,35 +261,31 @@ REKOMENDASI MITIGASI:
 <section id="instalasi">
   <div class="wrap">
     <h2>Instalasi</h2>
-    <p class="lead">Distribusi dua lapis: portal ini menyediakan dokumentasi + skrip installer; binary pra-kompilasi tersedia di GitHub Releases.</p>
-
+    <p class="lead">Portal ini menyediakan dokumentasi + skrip installer; binary pra-kompilasi ada di GitHub Releases.</p>
     <div class="grid">
-      <div class="card"><h3>Opsi A — Installer Otomatis</h3>
-        <p><code>curl -fsSL https://kartika-agent-portal.vercel.app/install.sh | bash</code><br/><br/>
-        Skrip mendeteksi OS &amp; arsitektur, mengunduh binary dari GitHub Releases, lalu memasangnya ke <code>/usr/local/bin</code>.</p></div>
-      <div class="card"><h3>Opsi B — Unduh Manual</h3>
-        <p><code>kartika-agent-linux-amd64</code><br/><code>kartika-agent-windows-amd64.exe</code><br/><code>kartika-agent-darwin-arm64</code><br/><br/>
-        Unduh dari halaman Releases, beri izin eksekusi <code>chmod +x</code>, tempatkan di PATH.</p></div>
-      <div class="card"><h3>Opsi C — Build dari Source</h3>
-        <p><code>git clone</code> repo, lalu <code>bash build.sh</code> atau <code>make dist</code>. Membutuhkan Go ≥ 1.21. Hasil cross-compile di folder <code>dist/</code>.</p></div>
+      <div class="card hot"><h3>Opsi A — Installer otomatis</h3>
+        <p><code>curl -fsSL https://kartika-agent-portal.vercel.app/install.sh | bash</code><br/><br/>Mendeteksi OS &amp; arsitektur, mengunduh binary dari GitHub Releases, memasang ke <code>/usr/local/bin</code>.</p></div>
+      <div class="card"><h3>Opsi B — Unduh manual</h3>
+        <p><code>kartika-agent-linux-amd64</code><br/><code>kartika-agent-windows-amd64.exe</code><br/><code>kartika-agent-darwin-arm64</code><br/><br/>Unduh dari Releases, jalankan <code>chmod +x</code>, taruh di PATH.</p></div>
+      <div class="card"><h3>Opsi C — Build dari source</h3>
+        <p><code>git clone</code> repo, lalu <code>bash build.sh</code> atau <code>make dist</code>. Perlu Go ≥ 1.21. Hasil cross-compile ada di <code>dist/</code>.</p></div>
     </div>
-
-    <table>
+    <div class="tw"><table>
       <tr><th>Perintah</th><th>Fungsi</th></tr>
       <tr><td><code>kartika-agent</code></td><td>Membuka Mode Posko (shell taktis interaktif)</td></tr>
       <tr><td><code>kartika-agent --mission "Audit postur keamanan http://target"</code></td><td>Mode senyap/headless — eksekusi tunggal untuk CI/CD</td></tr>
-      <tr><td><code>kartika-agent --provider groq</code></td><td>Memilih profil provider AI (ollama|vllm|groq|openai|openrouter|gemini)</td></tr>
+      <tr><td><code>kartika-agent --provider groq</code></td><td>Pilih profil provider AI (ollama|vllm|groq|openai|openrouter|gemini)</td></tr>
       <tr><td><code>kartika-agent --no-mcp --no-color</code></td><td>Nonaktifkan MCP bridge / warna ANSI</td></tr>
       <tr><td><code>kartika-agent --version</code></td><td>Tampilkan versi TACTICAL CORE</td></tr>
-    </table>
+    </table></div>
   </div>
 </section>
 
 <section id="konfigurasi">
   <div class="wrap">
-    <h2>Konfigurasi Engine AI</h2>
-    <p class="lead">Satu skema, banyak otak. Semua provider di bawah memakai endpoint OpenAI-Compatible yang sama.</p>
-    <table>
+    <h2>Konfigurasi engine AI</h2>
+    <p class="lead">Satu skema, banyak otak. Semua provider memakai endpoint OpenAI-Compatible yang sama.</p>
+    <div class="tw" style="margin-top:0"><table>
       <tr><th>Mode</th><th>KARTIKA_API_URL</th><th>Catatan</th></tr>
       <tr><td><b>Ollama</b> (air-gapped)</td><td><code>http://localhost:11434/v1</code></td><td>Default. Tanpa koneksi internet keluar.</td></tr>
       <tr><td><b>vLLM</b> (air-gapped)</td><td><code>http://server-satuan:8000/v1</code></td><td>Server inferensi internal TNI AD.</td></tr>
@@ -215,35 +293,50 @@ REKOMENDASI MITIGASI:
       <tr><td><b>Gemini</b></td><td><code>https://generativelanguage.googleapis.com/v1beta/openai</code></td><td>Endpoint OpenAI-Compatible resmi.</td></tr>
       <tr><td><b>OpenRouter</b></td><td><code>https://openrouter.ai/api/v1</code></td><td>Akses banyak model sekaligus.</td></tr>
       <tr><td><b>OpenAI</b></td><td><code>https://api.openai.com/v1</code></td><td>Endpoint resmi OpenAI.</td></tr>
-    </table>
+    </table></div>
 
-    <h2 style="margin-top:44px">Ekspansi Modul via mcp.json</h2>
-    <p class="lead">Kemampuan agen dapat diperluas kapan saja (Git forensics, SQLite inspection, Docker audit, network diagnostics) tanpa mengubah kode inti Golang.</p>
+    <h2 style="margin-top:56px">Ekspansi modul via mcp.json</h2>
+    <p class="lead">Perluas kemampuan agen kapan saja (Git forensics, SQLite inspection, Docker audit, network diagnostics) tanpa mengubah kode inti Golang.</p>
 <pre class="block">{
   "mcpServers": {
-    "filesystem": { "command": "npx",  "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
-    "git":        { "command": "uvx",  "args": ["mcp-server-git", "--repository", "."] },
-    "sqlite":     { "command": "uvx",  "args": ["mcp-server-sqlite", "--db-path", "./app.db"] }
+    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
+    "git":        { "command": "uvx", "args": ["mcp-server-git", "--repository", "."] },
+    "sqlite":     { "command": "uvx", "args": ["mcp-server-sqlite", "--db-path", "./app.db"] }
   }
 }</pre>
-    <div class="note">ETIKA OPERASI — KARTIKA-AGENT hanya untuk audit sistem milik sendiri atau sistem yang telah mendapat izin tertulis. Penggunaan terhadap target tanpa izin melanggar hukum dan disiplin satuan.</div>
+    <div class="note"><b>Etika operasi.</b> KARTIKA-AGENT hanya untuk audit sistem milik sendiri atau sistem yang telah mendapat izin tertulis. Penggunaan terhadap target tanpa izin melanggar hukum dan disiplin satuan.</div>
   </div>
 </section>
+</main>
 
 <footer>
-  <span class="brand">KARTIKA-AGENT // TACTICAL CORE v1.0</span>
-  Built with Golang 100% Native Standard Library · MCP Client (JSON-RPC 2.0 over Stdio) · Distribution: Vercel → GitHub Releases → Terminal Operator
+  <div class="wrap">
+    <div class="brand"><i></i>KARTIKA-AGENT // TACTICAL CORE v1.0</div>
+    Golang 100% Native Standard Library · MCP Client (JSON-RPC 2.0 over Stdio) · Vercel → GitHub Releases → Terminal Operator
+  </div>
 </footer>
 
 <script>
-function copyCmd(){
-  var t = document.getElementById('cmd').innerText;
-  navigator.clipboard.writeText(t).then(function(){
-    var b = document.querySelector('.btn'); var old = b.innerText;
-    b.innerText = 'TERSALIN';
-    setTimeout(function(){ b.innerText = old; }, 1600);
+(function(){
+  var m=document.getElementById('menu'),ul=document.getElementById('links');
+  m.addEventListener('click',function(){var o=ul.classList.toggle('open');m.setAttribute('aria-expanded',o)});
+  ul.addEventListener('click',function(e){if(e.target.tagName==='A'){ul.classList.remove('open');m.setAttribute('aria-expanded','false')}});
+
+  var btn=document.getElementById('copy');
+  btn.addEventListener('click',function(){
+    var t=document.getElementById('cmd').innerText,old=btn.innerText;
+    function ok(){btn.innerText='TERSALIN';setTimeout(function(){btn.innerText=old},1600)}
+    if(navigator.clipboard){navigator.clipboard.writeText(t).then(ok,function(){})}
   });
-}
+
+  // satu momen utama: terminal mengetik laporan baris demi baris
+  var lines=document.querySelectorAll('#tty .l:not(.on)');
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    lines.forEach(function(l){l.classList.add('on')});return;
+  }
+  var i=0;
+  (function next(){if(i<lines.length){lines[i++].classList.add('on');setTimeout(next,i<4?650:900)}})();
+})();
 </script>
 </body>
 </html>
