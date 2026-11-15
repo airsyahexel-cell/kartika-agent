@@ -79,6 +79,57 @@ func Load(provider string) *Config {
 	return c
 }
 
+// IsLocal melaporkan apakah engine berjalan di mesin lokal (ollama/vLLM/localhost).
+func (c *Config) IsLocal() bool {
+	p := strings.ToLower(c.Provider)
+	if p == "ollama" || p == "vllm" {
+		return true
+	}
+	u := strings.ToLower(c.APIURL)
+	return strings.Contains(u, "localhost") || strings.Contains(u, "127.0.0.1") || strings.Contains(u, "0.0.0.0") || strings.Contains(u, "::1") || strings.Contains(u, ":11434") || strings.Contains(u, ":8000")
+}
+
+// SaveEnvVar menyimpan variabel ke file ~/.config/kartika/.env (dan .env lokal jika ada).
+func SaveEnvVar(key, val string) error {
+	_ = os.Setenv(key, val)
+
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		globalDir := filepath.Join(home, ".config", "kartika")
+		_ = os.MkdirAll(globalDir, 0755)
+		globalPath := filepath.Join(globalDir, ".env")
+		_ = updateEnvFile(globalPath, key, val)
+	}
+
+	if _, err := os.Stat(".env"); err == nil {
+		_ = updateEnvFile(".env", key, val)
+	}
+	return nil
+}
+
+func updateEnvFile(path, key, val string) error {
+	var lines []string
+	found := false
+	if data, err := os.ReadFile(path); err == nil {
+		sc := bufio.NewScanner(strings.NewReader(string(data)))
+		for sc.Scan() {
+			line := sc.Text()
+			trimmed := strings.TrimSpace(line)
+			if !strings.HasPrefix(trimmed, "#") && strings.HasPrefix(trimmed, key+"=") {
+				lines = append(lines, key+"="+val)
+				found = true
+			} else {
+				lines = append(lines, line)
+			}
+		}
+	}
+	if !found {
+		lines = append(lines, key+"="+val)
+	}
+	content := strings.Join(lines, "\n") + "\n"
+	return os.WriteFile(path, []byte(content), 0600)
+}
+
 // loadDotEnv memuat pasangan KEY=VALUE dari file .env hanya untuk variabel
 // yang belum ada di lingkungan (env asli selalu menang).
 func loadDotEnv(path string) {

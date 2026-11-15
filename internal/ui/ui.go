@@ -38,17 +38,44 @@ type SlashCommand struct {
 	Desc string
 }
 
+// isLocalMode menentukan konfigurasi menu saran slash (lokal vs API/cloud).
+var isLocalMode = true
+
+func buildSlashCommands(local bool) []SlashCommand {
+	var cmds []SlashCommand
+	if local {
+		cmds = append(cmds,
+			SlashCommand{"/pilih model", "pilih / ganti model AI (KARTIKA_MODEL)"},
+			SlashCommand{"/konfigurasi-api-key", "konfigurasi lengkap: URL, API Key & Model"},
+		)
+	} else {
+		cmds = append(cmds,
+			SlashCommand{"/konfigurasi-api-key", "konfigurasi lengkap: URL, API Key & Model"},
+			SlashCommand{"/pilih model", "pilih / ganti model AI (KARTIKA_MODEL)"},
+		)
+	}
+	cmds = append(cmds,
+		SlashCommand{"/status", "info engine & modul aktif"},
+		SlashCommand{"/modul", "daftar seluruh modul taktis"},
+		SlashCommand{"/skill", "daftar & baca pustaka skill metodologi (/skill <nama>)"},
+		SlashCommand{"/mcp", "status MCP server & lokasi konfigurasi"},
+		SlashCommand{"/pikir", "tampilkan/sembunyikan pemikiran model (ctrl+b)"},
+		SlashCommand{"/bersih", "bersihkan layar dan tampilkan ulang banner"},
+		SlashCommand{"/baru", "sesi baru — hapus memori percakapan"},
+		SlashCommand{"/bantuan", "tampilkan bantuan"},
+		SlashCommand{"/keluar", "tutup sesi posko"},
+	)
+	return cmds
+}
+
 // SlashCommands adalah daftar perintah mode posko untuk menu saran & bantuan.
-var SlashCommands = []SlashCommand{
-	{"/status", "info engine & modul aktif"},
-	{"/modul", "daftar seluruh modul taktis"},
-	{"/skill", "daftar & baca pustaka skill metodologi (/skill <nama>)"},
-	{"/mcp", "status MCP server & lokasi konfigurasi"},
-	{"/pikir", "tampilkan/sembunyikan pemikiran model (ctrl+b)"},
-	{"/bersih", "bersihkan layar dan tampilkan ulang banner"},
-	{"/baru", "sesi baru — hapus memori percakapan"},
-	{"/bantuan", "tampilkan bantuan"},
-	{"/keluar", "tutup sesi posko"},
+var SlashCommands = buildSlashCommands(true)
+
+// SetLocalMode mengatur apakah menu saran slash menampilkan perintah mode lokal
+// (/pilih model) atau mode API/cloud (/masukan-api-key).
+func SetLocalMode(local bool) {
+	isLocalMode = local
+	SlashCommands = buildSlashCommands(local)
 }
 
 // SetColor mengaktifkan/menonaktifkan keluaran ANSI.
@@ -362,15 +389,10 @@ func MCPFail(name, reason string) {
 func PrintPoskoHelp() {
 	fmt.Println()
 	fmt.Println(Bold(Cyan("MODE POSKO — CHAT TAKTIS (gaya Claude Code / opencode)")))
-	fmt.Println("  /status     : info engine & modul aktif")
-	fmt.Println("  /modul      : daftar seluruh modul taktis")
-	fmt.Println("  /mcp        : status MCP server & lokasi konfigurasi")
-	fmt.Println("  /pikir      : tampilkan/sembunyikan pemikiran model")
-	fmt.Println("  /bersih     : bersihkan layar dan tampilkan ulang banner")
-	fmt.Println("  /baru       : sesi baru — hapus memori percakapan")
-	fmt.Println("  /bantuan    : tampilkan bantuan ini")
-	fmt.Println("  /keluar     : tutup sesi posko")
-	fmt.Println("  <teks>      : chat / pertanyaan — jawaban mengalir real-time")
+	for _, c := range SlashCommands {
+		fmt.Printf("  %-16s: %s\n", c.Cmd, c.Desc)
+	}
+	fmt.Println("  <teks>          : chat / pertanyaan — jawaban mengalir real-time")
 	fmt.Println(Dim("  Ketik '/' untuk memunculkan menu perintah (▲▼ pilih, Tab lengkapi)."))
 	fmt.Println(Dim("  ctrl+b pemikiran model · PgUp/PgDn scroll · ctrl+t tab baru · alt+1..9 pindah tab."))
 	fmt.Println(Dim("  Sesi tersimpan otomatis — kartika --lanjut [id] buka ulang, kartika -s daftar sesi."))

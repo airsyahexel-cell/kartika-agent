@@ -51,3 +51,41 @@ func TestWrapHardANSISelamat(t *testing.T) {
 		t.Fatalf("huruf hilang saat lipat keras: %d/25", n)
 	}
 }
+
+func TestSlashCommandsMode(t *testing.T) {
+	// Mode lokal: /pilih model harus di urutan teratas
+	SetLocalMode(true)
+	matches := filterSlash([]rune("/"))
+	if len(matches) == 0 || matches[0].Cmd != "/pilih model" {
+		t.Errorf("di mode lokal, /pilih model harus berada di posisi teratas")
+	}
+
+	// Filter /pilih atau /pilih-model harus mencocokkan /pilih model
+	pilihMatches := filterSlash([]rune("/pilih"))
+	if len(pilihMatches) == 0 || pilihMatches[0].Cmd != "/pilih model" {
+		t.Errorf("filterSlash(/pilih) harus mencocokkan /pilih model")
+	}
+	hyphenMatches := filterSlash([]rune("/pilih-m"))
+	if len(hyphenMatches) == 0 || hyphenMatches[0].Cmd != "/pilih model" {
+		t.Errorf("filterSlash(/pilih-m) harus mencocokkan /pilih model")
+	}
+
+	// Mode cloud/API: /konfigurasi-api-key harus di urutan teratas
+	SetLocalMode(false)
+	matchesCloud := filterSlash([]rune("/"))
+	if len(matchesCloud) == 0 || matchesCloud[0].Cmd != "/konfigurasi-api-key" {
+		t.Errorf("di mode cloud, /konfigurasi-api-key harus berada di posisi teratas")
+	}
+
+	// /konfigurasi-api-key harus selalu ada
+	foundKonfig := false
+	for _, m := range matchesCloud {
+		if m.Cmd == "/konfigurasi-api-key" {
+			foundKonfig = true
+			break
+		}
+	}
+	if !foundKonfig {
+		t.Errorf("perintah /konfigurasi-api-key harus tersedia di menu")
+	}
+}

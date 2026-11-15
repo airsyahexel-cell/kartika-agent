@@ -18,3 +18,4 @@ mcp.test.json
 # Artefak uji MCP browser
 .playwright-mcp/
 c.txt
+.~lock.*

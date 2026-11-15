@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // SetInterruptHandler tidak dipakai pada platform ini (tanpa mode raw).
@@ -25,13 +26,14 @@ func NewKeyTap() *KeyTap { return &KeyTap{} }
 // Stop tidak melakukan apa-apa.
 func (k *KeyTap) Stop() {}
 
+var pipeStdinReader = bufio.NewReader(os.Stdin)
+
 // ReadInput membaca satu baris tanpa menu saran (fallback).
 func ReadInput(prefix string) (string, error) {
 	fmt.Print(Prompt(prefix + " "))
-	r := bufio.NewReader(os.Stdin)
-	line, err := r.ReadString('\n')
+	line, err := pipeStdinReader.ReadString('\n')
 	if err != nil && line == "" {
 		return "", err
 	}
-	return line, nil
+	return strings.TrimRight(line, "\r\n"), nil
 }

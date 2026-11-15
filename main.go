@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -75,6 +76,7 @@ func main() {
 	}
 
 	ui.SetColor(ui.DetectColor(*noColor))
+	ui.SetLocalMode(cfg.IsLocal())
 	ui.PrintHeader(version)
 
 	// Registri modul taktis: modul built-in inti.
@@ -356,6 +358,24 @@ func main() {
 				ui.Info("  Memori percakapan dikosongkan — sesi baru siap.")
 				tui.SetStatus(statusIdle(sesiID))
 				continue
+			case "/konfigurasi-api-key", "konfigurasi-api-key", "/konfigurasi", "konfigurasi", "/config", "config", "/masukan-api-key", "masukan-api-key", "/api-key", "api-key", "/apikey", "apikey":
+				handleKonfigurasiAPIKey(cfg, engine, func(p string) (string, error) {
+					return ui.ReadInputTUI(tui, p)
+				}, tui.Append)
+				tui.SetStatus(statusIdle(sesiID))
+				continue
+			case "/pilih model", "pilih model", "/pilih-model", "pilih-model", "/model", "model":
+				handlePilihModel("", cfg, engine, func(p string) (string, error) {
+					return ui.ReadInputTUI(tui, p)
+				}, tui.Append)
+				tui.SetStatus(statusIdle(sesiID))
+				continue
+			case "/api-url", "api-url", "/url", "url":
+				handleAPIURL("", cfg, engine, func(p string) (string, error) {
+					return ui.ReadInputTUI(tui, p)
+				}, tui.Append)
+				tui.SetStatus(statusIdle(sesiID))
+				continue
 			}
 			if strings.HasPrefix(line, "/") {
 				// Perintah berargumen: /skill <nama>
@@ -364,6 +384,39 @@ func main() {
 					if f := strings.Fields(line); len(f) > 1 {
 						printSkillDoc(strings.Join(f[1:], " "))
 					}
+					continue
+				}
+				if strings.HasPrefix(low, "/konfigurasi-api-key") || strings.HasPrefix(low, "/masukan-api-key") || strings.HasPrefix(low, "/konfigurasi") {
+					handleKonfigurasiAPIKey(cfg, engine, func(p string) (string, error) {
+						return ui.ReadInputTUI(tui, p)
+					}, tui.Append)
+					tui.SetStatus(statusIdle(sesiID))
+					continue
+				}
+				if strings.HasPrefix(low, "/pilih model ") || strings.HasPrefix(low, "/pilih-model ") || strings.HasPrefix(low, "/model ") {
+					f := strings.Fields(line)
+					arg := ""
+					if strings.HasPrefix(low, "/pilih model ") && len(f) > 2 {
+						arg = strings.Join(f[2:], " ")
+					} else if len(f) > 1 {
+						arg = strings.Join(f[1:], " ")
+					}
+					handlePilihModel(arg, cfg, engine, func(p string) (string, error) {
+						return ui.ReadInputTUI(tui, p)
+					}, tui.Append)
+					tui.SetStatus(statusIdle(sesiID))
+					continue
+				}
+				if strings.HasPrefix(low, "/api-url ") || strings.HasPrefix(low, "/url ") {
+					f := strings.Fields(line)
+					arg := ""
+					if len(f) > 1 {
+						arg = strings.Join(f[1:], " ")
+					}
+					handleAPIURL(arg, cfg, engine, func(p string) (string, error) {
+						return ui.ReadInputTUI(tui, p)
+					}, tui.Append)
+					tui.SetStatus(statusIdle(sesiID))
 					continue
 				}
 				ui.Warn("Perintah tidak dikenali: " + line + " — ketik /bantuan untuk daftar perintah.")
@@ -511,6 +564,21 @@ func main() {
 			sesiID = tabs[0].sesiID
 			ui.Info("  Memori percakapan dikosongkan — sesi baru siap.")
 			continue
+		case "/konfigurasi-api-key", "konfigurasi-api-key", "/konfigurasi", "konfigurasi", "/config", "config", "/masukan-api-key", "masukan-api-key", "/api-key", "api-key", "/apikey", "apikey":
+			handleKonfigurasiAPIKey(cfg, engine, func(p string) (string, error) {
+				return ui.ReadInput(p)
+			}, func(s string) { fmt.Println(s) })
+			continue
+		case "/pilih model", "pilih model", "/pilih-model", "pilih-model", "/model", "model":
+			handlePilihModel("", cfg, engine, func(p string) (string, error) {
+				return ui.ReadInput(p)
+			}, func(s string) { fmt.Println(s) })
+			continue
+		case "/api-url", "api-url", "/url", "url":
+			handleAPIURL("", cfg, engine, func(p string) (string, error) {
+				return ui.ReadInput(p)
+			}, func(s string) { fmt.Println(s) })
+			continue
 		}
 		if strings.HasPrefix(line, "/") {
 			// Perintah berargumen: /skill <nama>
@@ -519,6 +587,36 @@ func main() {
 				if f := strings.Fields(line); len(f) > 1 {
 					printSkillDoc(strings.Join(f[1:], " "))
 				}
+				continue
+			}
+			if strings.HasPrefix(low, "/konfigurasi-api-key") || strings.HasPrefix(low, "/masukan-api-key") || strings.HasPrefix(low, "/konfigurasi") {
+				handleKonfigurasiAPIKey(cfg, engine, func(p string) (string, error) {
+					return ui.ReadInput(p)
+				}, func(s string) { fmt.Println(s) })
+				continue
+			}
+			if strings.HasPrefix(low, "/pilih model ") || strings.HasPrefix(low, "/pilih-model ") || strings.HasPrefix(low, "/model ") {
+				f := strings.Fields(line)
+				arg := ""
+				if strings.HasPrefix(low, "/pilih model ") && len(f) > 2 {
+					arg = strings.Join(f[2:], " ")
+				} else if len(f) > 1 {
+					arg = strings.Join(f[1:], " ")
+				}
+				handlePilihModel(arg, cfg, engine, func(p string) (string, error) {
+					return ui.ReadInput(p)
+				}, func(s string) { fmt.Println(s) })
+				continue
+			}
+			if strings.HasPrefix(low, "/api-url ") || strings.HasPrefix(low, "/url ") {
+				f := strings.Fields(line)
+				arg := ""
+				if len(f) > 1 {
+					arg = strings.Join(f[1:], " ")
+				}
+				handleAPIURL(arg, cfg, engine, func(p string) (string, error) {
+					return ui.ReadInput(p)
+				}, func(s string) { fmt.Println(s) })
 				continue
 			}
 			ui.Warn("Perintah tidak dikenali: " + line + " — ketik /bantuan untuk daftar perintah.")
@@ -614,6 +712,366 @@ func checkEngine(cfg *config.Config) bool {
 	}
 	resp.Body.Close()
 	return resp.StatusCode < 500
+}
+
+// fetchAvailableModels mengambil daftar model yang tersedia dari engine AI.
+func fetchAvailableModels(cfg *config.Config) ([]string, error) {
+	baseURL := strings.TrimRight(cfg.APIURL, "/")
+	cl := &http.Client{Timeout: 3 * time.Second}
+
+	var found []string
+	seen := make(map[string]bool)
+
+	// 1. Coba endpoint OpenAI /models (didukung Ollama v1, vLLM, Groq, OpenAI, dll.)
+	req, err := http.NewRequest("GET", baseURL+"/models", nil)
+	if err == nil {
+		if cfg.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+		}
+		resp, err := cl.Do(req)
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				var data struct {
+					Data []struct {
+						ID string `json:"id"`
+					} `json:"data"`
+				}
+				if json.NewDecoder(resp.Body).Decode(&data) == nil {
+					for _, m := range data.Data {
+						id := strings.TrimSpace(m.ID)
+						if id != "" && !seen[id] {
+							seen[id] = true
+							found = append(found, id)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Fallback untuk Ollama native endpoint: /api/tags
+	if len(found) == 0 {
+		host := baseURL
+		if idx := strings.Index(baseURL, "/v1"); idx != -1 {
+			host = baseURL[:idx]
+		}
+		req2, err := http.NewRequest("GET", host+"/api/tags", nil)
+		if err == nil {
+			resp2, err := cl.Do(req2)
+			if err == nil {
+				defer resp2.Body.Close()
+				if resp2.StatusCode == http.StatusOK {
+					var data struct {
+						Models []struct {
+							Name string `json:"name"`
+						} `json:"models"`
+					}
+					if json.NewDecoder(resp2.Body).Decode(&data) == nil {
+						for _, m := range data.Models {
+							name := strings.TrimSpace(m.Name)
+							if name != "" && !seen[name] {
+								seen[name] = true
+								found = append(found, name)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if len(found) == 0 {
+		return nil, errors.New("tidak ada model yang terdeteksi")
+	}
+	sort.Strings(found)
+	return found, nil
+}
+
+func handleKonfigurasiAPIKey(cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string)) {
+	appendMsg(ui.Bold(ui.Cyan("KONFIGURASI ENGINE AI (URL, API KEY, & MODEL)")))
+	appendMsg(ui.Dim("  Tekan Enter pada langkah mana pun untuk tetap memakai nilai saat ini (/batal untuk keluar)."))
+	appendMsg("")
+
+	// [1/3] API URL
+	appendMsg(ui.Bold("[1/3] API URL ENGINE"))
+	appendMsg("  URL aktif : " + ui.Dim(cfg.APIURL))
+	appendMsg("  Preset    : [1] ollama [2] vllm [3] groq [4] openai [5] openrouter [6] gemini [7] nvidia")
+	appendMsg("  Masukkan nomor preset / URL baru (Enter = tetap):")
+	inURL, err := readInput("URL ❯")
+	if err != nil {
+		return
+	}
+	inURL = strings.TrimSpace(inURL)
+	if strings.EqualFold(inURL, "/batal") || strings.EqualFold(inURL, "batal") {
+		appendMsg(ui.Dim("  Konfigurasi dibatalkan."))
+		return
+	}
+
+	newURL := cfg.APIURL
+	if inURL != "" {
+		if num, perr := strconv.Atoi(inURL); perr == nil && num >= 1 && num <= len(config.ProviderPresets) {
+			newURL = config.ProviderPresets[num-1].URL
+			cfg.Provider = config.ProviderPresets[num-1].Name
+		} else {
+			matched := false
+			for _, p := range config.ProviderPresets {
+				if strings.EqualFold(inURL, p.Name) {
+					newURL = p.URL
+					cfg.Provider = p.Name
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				newURL = inURL
+				if !strings.HasPrefix(newURL, "http://") && !strings.HasPrefix(newURL, "https://") {
+					newURL = "http://" + newURL
+				}
+			}
+		}
+	}
+	appendMsg(ui.Dim("  → URL dipilih: " + newURL))
+	appendMsg("")
+
+	// [2/3] API KEY
+	appendMsg(ui.Bold("[2/3] API KEY (BEARER TOKEN)"))
+	masked := cfg.APIKey
+	if masked == "" {
+		masked = "(kosong)"
+	} else if len(masked) > 8 {
+		masked = masked[:4] + "..." + masked[len(masked)-4:]
+	}
+	appendMsg("  Kunci aktif: " + ui.Dim(masked))
+	appendMsg("  Masukkan API Key baru (Enter = tetap):")
+	inKey, err := readInput("API KEY ❯")
+	if err != nil {
+		return
+	}
+	inKey = strings.TrimSpace(inKey)
+	if strings.EqualFold(inKey, "/batal") || strings.EqualFold(inKey, "batal") {
+		appendMsg(ui.Dim("  Konfigurasi dibatalkan."))
+		return
+	}
+
+	newKey := cfg.APIKey
+	if inKey != "" {
+		newKey = strings.Trim(inKey, `"'`)
+	}
+	newMasked := newKey
+	if len(newMasked) > 8 {
+		newMasked = newMasked[:4] + "..." + newMasked[len(newMasked)-4:]
+	}
+	appendMsg(ui.Dim("  → API Key dipilih: " + newMasked))
+	appendMsg("")
+
+	// [3/3] MODEL
+	appendMsg(ui.Bold("[3/3] MODEL AI (KARTIKA_MODEL)"))
+	appendMsg("  Model aktif: " + ui.Dim(cfg.Model))
+
+	tempCfg := &config.Config{APIURL: newURL, APIKey: newKey}
+	models, _ := fetchAvailableModels(tempCfg)
+	if len(models) > 0 {
+		appendMsg("  Model terdeteksi di engine:")
+		maxShow := 8
+		for i, m := range models {
+			if i >= maxShow {
+				appendMsg(fmt.Sprintf("    ... dan %d model lainnya", len(models)-maxShow))
+				break
+			}
+			mark := ""
+			if m == cfg.Model {
+				mark = ui.Bold(ui.Green(" (aktif)"))
+			}
+			appendMsg(fmt.Sprintf("    [%d] %s%s", i+1, m, mark))
+		}
+		appendMsg(fmt.Sprintf("  Pilih nomor [1-%d] atau ketik nama model baru (Enter = tetap):", len(models)))
+	} else {
+		appendMsg("  Masukkan nama model baru (Enter = tetap):")
+	}
+
+	inModel, err := readInput("MODEL ❯")
+	if err != nil {
+		return
+	}
+	inModel = strings.TrimSpace(inModel)
+	if strings.EqualFold(inModel, "/batal") || strings.EqualFold(inModel, "batal") {
+		appendMsg(ui.Dim("  Konfigurasi dibatalkan."))
+		return
+	}
+
+	newModel := cfg.Model
+	if inModel != "" {
+		if num, perr := strconv.Atoi(inModel); perr == nil && num >= 1 && num <= len(models) {
+			newModel = models[num-1]
+		} else {
+			newModel = strings.Trim(inModel, `"'`)
+		}
+	}
+	appendMsg(ui.Dim("  → Model dipilih: " + newModel))
+	appendMsg("")
+
+	cfg.APIURL = newURL
+	cfg.APIKey = newKey
+	cfg.Model = newModel
+	if engine != nil {
+		engine.URL = newURL
+		engine.APIKey = newKey
+		engine.Model = newModel
+	}
+	_ = config.SaveEnvVar("KARTIKA_API_URL", newURL)
+	_ = config.SaveEnvVar("KARTIKA_API_KEY", newKey)
+	_ = config.SaveEnvVar("KARTIKA_MODEL", newModel)
+	ui.SetLocalMode(cfg.IsLocal())
+
+	ok := checkEngine(cfg)
+	appendMsg(ui.Green("✓ Konfigurasi berhasil disimpan ke ~/.config/kartika/.env!"))
+	appendMsg("  URL   : " + ui.Cyan(newURL))
+	appendMsg("  Key   : " + ui.Dim(newMasked))
+	appendMsg("  Model : " + ui.Cyan(newModel))
+	if ok {
+		appendMsg(ui.Green("✓ Status engine: ONLINE — siap digunakan."))
+	} else {
+		appendMsg(ui.Yellow("! Status engine: BELUM TERHUBUNG — periksa apakah URL, Key, dan Model sudah tepat."))
+	}
+}
+
+func handlePilihModel(arg string, cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string)) {
+	chosen := strings.TrimSpace(arg)
+	if chosen == "" {
+		appendMsg(ui.Bold(ui.Cyan("PILIH MODEL AI (KARTIKA_MODEL)")))
+		appendMsg(ui.Dim("  Model saat ini: " + cfg.Model))
+		appendMsg(ui.Dim("  Menghubungi engine di " + cfg.APIURL + "..."))
+
+		models, err := fetchAvailableModels(cfg)
+		if err == nil && len(models) > 0 {
+			appendMsg("  Model yang tersedia:")
+			for i, m := range models {
+				mark := ""
+				if m == cfg.Model {
+					mark = ui.Bold(ui.Green(" (aktif)"))
+				}
+				appendMsg(fmt.Sprintf("    [%d] %s%s", i+1, m, mark))
+			}
+			appendMsg(fmt.Sprintf("  Pilih nomor [1-%d] atau ketik nama model baru (atau /batal):", len(models)))
+			in, rerr := readInput("MODEL ❯")
+			if rerr != nil {
+				return
+			}
+			in = strings.TrimSpace(in)
+			if in == "" || strings.ToLower(in) == "/batal" || strings.ToLower(in) == "batal" {
+				appendMsg(ui.Dim("  Pemilihan model dibatalkan."))
+				return
+			}
+			if num, perr := strconv.Atoi(in); perr == nil && num >= 1 && num <= len(models) {
+				chosen = models[num-1]
+			} else {
+				chosen = in
+			}
+		} else {
+			appendMsg(ui.Yellow("  Daftar model tidak dapat diambil otomatis dari engine."))
+			appendMsg("  Ketik nama model yang ingin digunakan (atau /batal):")
+			in, rerr := readInput("MODEL ❯")
+			if rerr != nil {
+				return
+			}
+			in = strings.TrimSpace(in)
+			if in == "" || strings.ToLower(in) == "/batal" || strings.ToLower(in) == "batal" {
+				appendMsg(ui.Dim("  Pemilihan model dibatalkan."))
+				return
+			}
+			chosen = in
+		}
+	}
+
+	chosen = strings.Trim(chosen, `"'`)
+	if chosen == "" {
+		appendMsg(ui.Yellow("  Nama model tidak boleh kosong."))
+		return
+	}
+
+	cfg.Model = chosen
+	if engine != nil {
+		engine.Model = chosen
+	}
+	_ = config.SaveEnvVar("KARTIKA_MODEL", chosen)
+
+	ok := checkEngine(cfg)
+	appendMsg(ui.Green("✓ Model aktif diubah menjadi: " + chosen))
+	appendMsg(ui.Dim("  Tersimpan di ~/.config/kartika/.env"))
+	if ok {
+		appendMsg(ui.Green("✓ Engine AI [ONLINE] dengan model " + chosen))
+	} else {
+		appendMsg(ui.Yellow("! Engine belum merespons model ini di " + cfg.APIURL + ". Pastikan model sudah siap di engine."))
+	}
+}
+
+func handleAPIURL(arg string, cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string)) {
+	chosenURL := strings.TrimSpace(arg)
+	if chosenURL == "" {
+		appendMsg(ui.Bold(ui.Cyan("KONFIGURASI API URL ENGINE")))
+		appendMsg(ui.Dim("  URL aktif saat ini: " + cfg.APIURL))
+		appendMsg("  Preset provider yang tersedia:")
+		for i, p := range config.ProviderPresets {
+			mark := ""
+			if strings.TrimRight(cfg.APIURL, "/") == strings.TrimRight(p.URL, "/") {
+				mark = ui.Bold(ui.Green(" (aktif)"))
+			}
+			appendMsg(fmt.Sprintf("    [%d] %-10s -> %s%s", i+1, p.Name, p.URL, mark))
+		}
+		appendMsg(fmt.Sprintf("  Pilih nomor preset [1-%d], nama provider, atau ketik URL lengkap (atau /batal):", len(config.ProviderPresets)))
+		in, err := readInput("API URL ❯")
+		if err != nil {
+			return
+		}
+		in = strings.TrimSpace(in)
+		if in == "" || strings.ToLower(in) == "/batal" || strings.ToLower(in) == "batal" {
+			appendMsg(ui.Dim("  Pengaturan API URL dibatalkan."))
+			return
+		}
+		if num, perr := strconv.Atoi(in); perr == nil && num >= 1 && num <= len(config.ProviderPresets) {
+			chosenURL = config.ProviderPresets[num-1].URL
+			cfg.Provider = config.ProviderPresets[num-1].Name
+		} else {
+			matched := false
+			for _, p := range config.ProviderPresets {
+				if strings.EqualFold(in, p.Name) {
+					chosenURL = p.URL
+					cfg.Provider = p.Name
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				chosenURL = in
+			}
+		}
+	}
+
+	chosenURL = strings.Trim(chosenURL, `"'`)
+	if chosenURL == "" {
+		appendMsg(ui.Yellow("  API URL tidak boleh kosong."))
+		return
+	}
+	if !strings.HasPrefix(chosenURL, "http://") && !strings.HasPrefix(chosenURL, "https://") {
+		chosenURL = "http://" + chosenURL
+	}
+
+	cfg.APIURL = chosenURL
+	if engine != nil {
+		engine.URL = chosenURL
+	}
+	_ = config.SaveEnvVar("KARTIKA_API_URL", chosenURL)
+	ui.SetLocalMode(cfg.IsLocal())
+
+	ok := checkEngine(cfg)
+	appendMsg(ui.Green("✓ API URL berhasil diubah menjadi: " + chosenURL))
+	appendMsg(ui.Dim("  Tersimpan di ~/.config/kartika/.env"))
+	if ok {
+		appendMsg(ui.Green("✓ Engine AI [ONLINE] — model: " + cfg.Model))
+	} else {
+		appendMsg(ui.Yellow("! Engine belum merespons di URL baru. Pastikan endpoint aktif dan API key sesuai."))
+	}
 }
 
 // reportFailure menerjemahkan kegagalan chat menjadi pesan operator yang

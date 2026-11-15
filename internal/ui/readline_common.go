@@ -65,7 +65,8 @@ func filterSlash(buf []rune) []SlashCommand {
 	p := strings.ToLower(string(buf))
 	var out []SlashCommand
 	for _, c := range SlashCommands {
-		if strings.HasPrefix(strings.ToLower(c.Cmd), p) {
+		cmdLow := strings.ToLower(c.Cmd)
+		if strings.HasPrefix(cmdLow, p) || strings.HasPrefix(strings.ReplaceAll(cmdLow, " ", "-"), p) {
 			out = append(out, c)
 		}
 	}
@@ -86,7 +87,7 @@ func (e *lineEditor) recompute() {
 	e.match = nil
 	e.sel = 0
 	s := string(e.buf)
-	if strings.HasPrefix(s, "/") && !strings.Contains(s, " ") {
+	if strings.HasPrefix(s, "/") {
 		e.match = filterSlash(e.buf)
 	}
 	e.menu = len(e.match) > 0
@@ -252,18 +253,19 @@ func readKey(r *bufio.Reader) keyEvent {
 	return keyEvent{kind: kRune, r: rn}
 }
 
+var pipeStdinReader = bufio.NewReader(os.Stdin)
+
 // ReadInput membaca satu baris di kotak input mode posko. Pada terminal
 // interaktif (Linux/macOS) memakai mode raw sehingga mengetik "/" langsung
 // memunculkan menu saran perintah; pada pipe/CI jatuh ke input polos.
 func ReadInput(prefix string) (string, error) {
 	if !useColor || !IsTTY() {
 		fmt.Print(Prompt(prefix + " "))
-		r := bufio.NewReader(os.Stdin)
-		line, err := r.ReadString('\n')
+		line, err := pipeStdinReader.ReadString('\n')
 		if err != nil && line == "" {
 			return "", err
 		}
-		return line, nil
+		return strings.TrimRight(line, "\r\n"), nil
 	}
 	return readRawLine(prefix)
 }
