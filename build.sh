@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+export CGO_ENABLED=0 GOAMD64=v1
 # =====================================================================
 # KARTIKA-AGENT — Build & Cross-Compilation Multi-Platform
 # Catatan: proyek ini multi-package (internal/*), sehingga target build

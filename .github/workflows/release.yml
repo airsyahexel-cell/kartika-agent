@@ -30,7 +30,7 @@ jobs:
       - name: Build
         run: |
           mkdir -p dist
-          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
+          CGO_ENABLED=0 GOAMD64=v1 GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
             go build -ldflags="-s -w" -o dist/kartika-agent-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} .
 
       - name: Upload ke GitHub Release
