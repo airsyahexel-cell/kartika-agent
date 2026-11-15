@@ -15,7 +15,7 @@
 #
 # Pemakaian:
 #   bash install.sh                      # dari repo (pakai dist/ atau build)
-#   curl -fsSL https://kartika-agent.vercel.app/install.sh | bash
+#   curl -fsSL https://kartika-agent-portal.vercel.app/install.sh | bash
 #   # atau dengan repo kustom:
 #   KARTIKA_REPO=satuan-siber/kartika-agent bash install.sh
 #

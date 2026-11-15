@@ -183,7 +183,7 @@ source ~/.config/fish/config.fish   # fish (atau tutup-buka terminal)
 ### Opsi B — Installer Otomatis (dari Vercel Portal)
 
 ```bash
-curl -fsSL https://kartika-agent.vercel.app/install.sh | bash
+curl -fsSL https://kartika-agent-portal.vercel.app/install.sh | bash
 ```
 
 Skrip mendeteksi OS/arsitektur dan memasangnya sebagai perintah `kartika` di `/usr/local/bin` (fallback `~/.local/bin` + penyesuaian PATH otomatis untuk bash/zsh/fish/sh). Ketika dijalankan dari dalam repo, installer memakai **urutan sumber** berikut tanpa perlu jaringan:
@@ -454,7 +454,7 @@ Setiap *push tag* `v*` memicu workflow `.github/workflows/release.yml` yang memb
 ```text
 +-------------------------------------------------------------------+
 |  LAPIS 1: VERCEL (Distribution & Documentation Landing Portal)    |
-|  • URL Publik: https://kartika-agent.vercel.app                   |
+|  • URL Publik: https://kartika-agent-portal.vercel.app                   |
 |  • Menyediakan dokumentasi arsitektur & skrip /install.sh         |
 +---------------------------------+---------------------------------+
                                   | Mengunduh Binary Otomatis
