@@ -197,18 +197,18 @@ Skrip mendeteksi OS/arsitektur dan memasangnya sebagai perintah `kartika` di `/u
 ```bash
 # Linux
 curl -fSL -o kartika \
-  https://github.com/your-org/kartika-agent/releases/latest/download/kartika-agent-linux-amd64
+  https://github.com/airsyahexel-cell/kartika-agent/releases/latest/download/kartika-agent-linux-amd64
 chmod +x kartika && sudo mv kartika /usr/local/bin/
 ```
 
-> Sesuaikan `your-org/kartika-agent` dengan lokasi repo organisasi Anda. Opsi ini hanya berlaku setelah organisasi mempublikasikan release.
+> Sesuaikan `airsyahexel-cell/kartika-agent` dengan lokasi repo organisasi Anda. Opsi ini hanya berlaku setelah organisasi mempublikasikan release.
 
 ### Opsi D — Build dari Source
 
 Membutuhkan **Go ≥ 1.21**. Karena proyek multi-package, target build adalah *package root* (`.`):
 
 ```bash
-git clone https://github.com/your-org/kartika-agent.git
+git clone https://github.com/airsyahexel-cell/kartika-agent.git
 cd kartika-agent
 bash build.sh                       # cross-compile 3 platform ke dist/
 # atau langsung:
@@ -347,7 +347,7 @@ Contoh integrasi **GitHub Actions** (quality gate audit):
     KARTIKA_API_KEY: ${{ secrets.KARTIKA_API_KEY }}
     KARTIKA_MODEL:   ${{ secrets.KARTIKA_MODEL }}
   run: |
-    curl -fSL -o kartika https://github.com/your-org/kartika-agent/releases/latest/download/kartika-agent-linux-amd64
+    curl -fSL -o kartika https://github.com/airsyahexel-cell/kartika-agent/releases/latest/download/kartika-agent-linux-amd64
     chmod +x kartika
     ./kartika --mission "Audit source code pada ./src dan susun SITREP" --no-color
 ```

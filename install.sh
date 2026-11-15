@@ -86,7 +86,7 @@ patch_shell_configs() {
 
 # Sesuaikan dengan lokasi repo GitHub organisasi Anda (LAPIS 2 distribusi).
 # Hanya dipakai bila binary lokal tidak tersedia dan 'go' tidak terpasang.
-REPO="${KARTIKA_REPO:-your-org/kartika-agent}"
+REPO="${KARTIKA_REPO:-airsyahexel-cell/kartika-agent}"
 INSTALL_DIR="${KARTIKA_INSTALL_DIR:-/usr/local/bin}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 

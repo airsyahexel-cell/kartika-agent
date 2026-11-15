@@ -82,7 +82,7 @@ patch_shell_configs() {
 }
 
 # Sesuaikan dengan lokasi repo GitHub organisasi Anda (LAPIS 2 distribusi).
-REPO="${KARTIKA_REPO:-your-org/kartika-agent}"
+REPO="${KARTIKA_REPO:-airsyahexel-cell/kartika-agent}"
 INSTALL_DIR="${KARTIKA_INSTALL_DIR:-/usr/local/bin}"
 
 OS="$(uname -s)"
