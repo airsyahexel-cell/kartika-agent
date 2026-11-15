@@ -46,7 +46,7 @@ nav a:hover{color:var(--fg);background:var(--panel);text-decoration:none}
 .hero{padding:clamp(40px,8vw,104px) 0 clamp(40px,6vw,72px);position:relative;overflow:hidden}
 .hero::after{content:"";position:absolute;inset:0;pointer-events:none;
   background:radial-gradient(700px 360px at 85% 0%,rgba(240,180,41,.12),transparent 70%),radial-gradient(600px 300px at 0% 30%,rgba(143,179,57,.1),transparent 70%)}
-.hero .wrap{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:clamp(28px,5vw,56px);align-items:center}
+.hero .wrap{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:clamp(28px,5vw,56px);align-items:start}
 .tag{display:inline-block;font-family:var(--mono);font-size:12px;color:var(--olive);border:1px solid var(--olive);padding:4px 12px;border-radius:4px;margin-bottom:20px}
 h1{font-size:clamp(32px,5.6vw,72px);line-height:1.12;letter-spacing:-.02em;font-weight:700}
 h1 .hl{color:var(--amber)}
@@ -69,11 +69,11 @@ h1 .hl{color:var(--amber)}
 .dot{width:11px;height:11px;border-radius:50%}
 .dot:nth-child(1){background:#ff6b5b}.dot:nth-child(2){background:#f0b429}.dot:nth-child(3){background:#8fb339}
 .term-title{margin-left:8px;color:var(--dim);font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.term pre{padding:16px;font-size:clamp(11px,.9vw + 4px,15px);line-height:1.7;overflow-x:auto;color:var(--dim);min-height:360px;white-space:pre-wrap;word-break:break-word}
+.term pre{padding:16px;font-size:clamp(11px,.9vw + 4px,15px);line-height:1.7;overflow-x:auto;color:var(--dim);white-space:pre-wrap;word-break:break-word}
 .term .g{color:var(--olive)}.term .c{color:var(--cyan)}.term .y{color:var(--amber)}.term .r{color:var(--crit)}.term .w{color:var(--fg)}
 .cur{display:inline-block;width:8px;height:1em;background:var(--amber);vertical-align:-2px;animation:blink 1s steps(2) infinite}
 @keyframes blink{50%{opacity:0}}
-.l{display:none}.l.on{display:block}
+.l{display:block;visibility:hidden}.l.on{visibility:visible}.l.gap{margin-top:.9em}
 
 .install{display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px 8px 8px 14px;max-width:640px}
 .install code{flex:1;font-size:12.5px;color:var(--fg);overflow-x:auto;white-space:nowrap;scrollbar-width:none;min-width:0}
@@ -185,24 +185,10 @@ footer .brand{justify-content:center;margin-bottom:10px}
 
     <div class="term" role="img" aria-label="Contoh sesi KARTIKA-AGENT menghasilkan laporan SITREP">
       <div class="term-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="term-title">operator@posko — kartika-agent</span></div>
-<pre id="tty"><span class="l on c">[KARTIKA-AGENT // TACTICAL CORE v1.0]</span>
-<span class="l on">STATUS : <span class="g">ONLINE</span> | ENGINE: llama-3.3-70b | MODUL: 5 Built-in + 2 MCP</span>
-
-<span class="l on"><span class="w">MISI&gt;</span> Audit postur keamanan pada http://target.local/login.aspx, verifikasi setiap kelemahan beserta bukti teknisnya, dan susun SITREP mitigasi.</span>
-
-<span class="l"><span class="c">[FASE 1: RECON]</span>   Memetakan struktur target &amp; mengambil profil awal ...</span>
-<span class="l"><span class="c">[FASE 2: VERIFY]</span>  Memvalidasi response headers, atribut cookie, dan struktur form HTML ...</span>
-<span class="l"><span class="c">[FASE 3: REPORT]</span>  Menyusun SITREP dan rekomendasi hardening ...</span>
-
-<span class="l"><span class="w">SITREP // LAPORAN HASIL AUDIT &amp; VERIFIKASI KEAMANAN</span></span>
-<span class="l"><span class="r">[KRITIS]</span>  1. Transmisi Kredensial Tanpa Enkripsi (Cleartext HTTP)
-   • Bukti: target merespons di HTTP (Port 80) tanpa 'Strict-Transport-Security' maupun pengalihan HTTPS.</span>
-<span class="l"><span class="y">[WASPADA]</span> 2. Kebocoran Sidik Jari Teknologi
-   • Bukti: header 'Server' dan 'X-AspNet-Version' mengekspos versi IIS &amp; ASP.NET.</span>
-<span class="l"><span class="y">[WASPADA]</span> 3. Tanpa Proteksi Anti-Clickjacking &amp; MIME Sniffing
-   • Bukti: tidak ada 'X-Frame-Options', 'Content-Security-Policy', 'X-Content-Type-Options'.</span>
-
-<span class="l"><span class="g">REKOMENDASI:</span> aktifkan HTTPS + HSTS, sembunyikan banner versi di 'web.config', terapkan security headers di reverse proxy / IIS.</span><span class="cur"></span></pre>
+<pre id="tty"><span class="l on c">[KARTIKA-AGENT // TACTICAL CORE v1.0]</span><span class="l on">STATUS : <span class="g">ONLINE</span> | ENGINE: llama-3.3-70b | MODUL: 5 Built-in + 2 MCP</span><span class="l on gap"><span class="w">MISI&gt;</span> Audit postur keamanan pada http://target.local/login.aspx, verifikasi setiap kelemahan beserta bukti teknisnya, dan susun SITREP mitigasi.</span><span class="l gap"><span class="c">[FASE 1: RECON]</span>   Memetakan struktur target &amp; mengambil profil awal ...</span><span class="l"><span class="c">[FASE 2: VERIFY]</span>  Memvalidasi response headers, atribut cookie, dan struktur form HTML ...</span><span class="l"><span class="c">[FASE 3: REPORT]</span>  Menyusun SITREP dan rekomendasi hardening ...</span><span class="l gap"><span class="w">SITREP // LAPORAN HASIL AUDIT &amp; VERIFIKASI KEAMANAN</span></span><span class="l gap"><span class="r">[KRITIS]</span>  1. Transmisi Kredensial Tanpa Enkripsi (Cleartext HTTP)
+   • Bukti: target merespons di HTTP (Port 80) tanpa 'Strict-Transport-Security' maupun pengalihan HTTPS.</span><span class="l gap"><span class="y">[WASPADA]</span> 2. Kebocoran Sidik Jari Teknologi
+   • Bukti: header 'Server' dan 'X-AspNet-Version' mengekspos versi IIS &amp; ASP.NET.</span><span class="l gap"><span class="y">[WASPADA]</span> 3. Tanpa Proteksi Anti-Clickjacking &amp; MIME Sniffing
+   • Bukti: tidak ada 'X-Frame-Options', 'Content-Security-Policy', 'X-Content-Type-Options'.</span><span class="l gap"><span class="g">REKOMENDASI:</span> aktifkan HTTPS + HSTS, sembunyikan banner versi di 'web.config', terapkan security headers di reverse proxy / IIS.<span class="cur"></span></span></pre>
     </div>
   </div>
   <div class="wrap" style="margin-top:34px">
@@ -334,11 +320,6 @@ footer .brand{justify-content:center;margin-bottom:10px}
   if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
     lines.forEach(function(l){l.classList.add('on')});return;
   }
-  // kunci tinggi terminal ke ukuran akhir agar layout tidak bergeser saat mengetik
-  var tty=document.getElementById('tty');
-  lines.forEach(function(l){l.classList.add('on')});
-  tty.style.minHeight=tty.offsetHeight+'px';
-  lines.forEach(function(l){l.classList.remove('on')});
   var i=0;
   (function next(){if(i<lines.length){lines[i++].classList.add('on');setTimeout(next,i<4?650:900)}})();
 })();
