@@ -1,0 +1,20 @@
+# Artefak build
+bin/
+dist/
+
+# Konfigurasi rahasia
+.env
+
+# Hasil misi
+sitrep/
+
+# Konfigurasi MCP lokal (gunakan mcp.json.example sebagai templat)
+mcp.json
+mcp.test.json
+
+# Lain-lain
+*.log
+
+# Artefak uji MCP browser
+.playwright-mcp/
+c.txt

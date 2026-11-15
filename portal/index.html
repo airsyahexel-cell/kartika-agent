@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>KARTIKA-AGENT — Tactical Autonomous Security &amp; Audit CLI</title>
+<meta name="description" content="Agen audit keamanan otonom bergaya taktis: source code, konfigurasi infrastruktur, dan postur endpoint HTTP. Golang 100% stdlib, MCP Client native, Zero-False Positive."/>
+<style>
+  :root{
+    --bg:#070b0a; --bg2:#0b1210; --panel:#0e1714; --line:#1d2f29;
+    --fg:#d7e4dd; --dim:#8aa39a; --acc:#34d399; --acc2:#22d3ee; --warn:#fbbf24; --crit:#f87171;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--fg);font-family:var(--mono);line-height:1.65;font-size:15px}
+  a{color:var(--acc2);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  header{border-bottom:1px solid var(--line);background:rgba(7,11,10,.9);position:sticky;top:0;backdrop-filter:blur(6px);z-index:9}
+  .nav{display:flex;align-items:center;justify-content:space-between;height:60px}
+  .brand{color:var(--acc);font-weight:700;letter-spacing:1px}
+  .brand span{color:var(--dim)}
+  nav a{color:var(--dim);margin-left:20px;font-size:13px}
+  nav a:hover{color:var(--acc)}
+  .hero{padding:72px 0 56px;border-bottom:1px solid var(--line);background:
+    radial-gradient(1000px 400px at 70% -10%, rgba(52,211,153,.08), transparent)}
+  .tag{display:inline-block;border:1px solid var(--acc);color:var(--acc);font-size:12px;padding:3px 12px;border-radius:3px;letter-spacing:2px;margin-bottom:20px}
+  h1{font-size:clamp(26px,4vw,42px);letter-spacing:1px;line-height:1.25}
+  h1 em{font-style:normal;color:var(--acc)}
+  .sub{color:var(--dim);max-width:760px;margin:16px 0 28px}
+  .badges{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:32px}
+  .badge{border:1px solid var(--line);background:var(--bg2);color:var(--dim);font-size:12px;padding:4px 12px;border-radius:3px}
+  .badge b{color:var(--acc)}
+  .term{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .term-bar{display:flex;gap:6px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--bg2)}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--line)}
+  .term-title{margin-left:8px;color:var(--dim);font-size:12px}
+  .term pre{padding:18px;font-size:12.5px;overflow-x:auto;color:var(--dim)}
+  .term .g{color:var(--acc)} .term .c{color:var(--acc2)} .term .y{color:var(--warn)} .term .r{color:var(--crit)} .term .w{color:var(--fg)}
+  .install{display:flex;align-items:center;gap:12px;background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:12px 16px;max-width:720px;margin-top:26px}
+  .install code{color:var(--fg);font-size:13px;flex:1;overflow-x:auto;white-space:nowrap}
+  .btn{background:var(--acc);color:#05130d;border:none;font-family:var(--mono);font-weight:700;font-size:12px;padding:8px 14px;border-radius:3px;cursor:pointer}
+  .btn:hover{filter:brightness(1.1)}
+  section{padding:64px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:20px;color:var(--acc);letter-spacing:1px;margin-bottom:8px}
+  h2::before{content:"// ";color:var(--dim)}
+  .lead{color:var(--dim);margin-bottom:34px;max-width:760px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:22px}
+  .card h3{font-size:14px;color:var(--fg);margin-bottom:10px;letter-spacing:1px}
+  .card h3::before{content:"▶ ";color:var(--acc)}
+  .card p{color:var(--dim);font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:18px}
+  th{text-align:left;color:var(--acc);border-bottom:1px solid var(--line);padding:10px 12px;letter-spacing:1px;font-size:12px}
+  td{border-bottom:1px solid var(--line);padding:10px 12px;color:var(--dim);vertical-align:top}
+  td code, p code, li code{background:var(--bg2);border:1px solid var(--line);border-radius:3px;padding:1px 6px;color:var(--fg);font-size:12.5px}
+  pre.block{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px;font-size:12.5px;color:var(--dim);overflow-x:auto;margin-top:18px}
+  .steps{counter-reset:st;list-style:none;margin-top:18px}
+  .steps li{counter-increment:st;margin-bottom:16px;color:var(--dim);padding-left:52px;position:relative}
+  .steps li::before{content:"[FASE " counter(st) "]";position:absolute;left:0;top:2px;color:var(--acc);font-size:12px;letter-spacing:1px}
+  .steps b{color:var(--fg)}
+  .note{border-left:3px solid var(--warn);background:rgba(251,191,36,.06);padding:14px 18px;color:var(--dim);font-size:13px;margin-top:26px;border-radius:0 4px 4px 0}
+  footer{padding:44px 0;color:var(--dim);font-size:12.5px;text-align:center}
+  footer .brand{display:block;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand">KARTIKA-AGENT <span>// TACTICAL CORE</span></div>
+    <nav>
+      <a href="#fitur">Fitur</a>
+      <a href="#arsitektur">Arsitektur</a>
+      <a href="#instalasi">Instalasi</a>
+      <a href="#konfigurasi">Konfigurasi</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <span class="tag">01 OFFENSIVE TECH / 03 CORE INFRA — AUTOMATED SECURITY AUDITING</span>
+    <h1>Tactical <em>Autonomous Security</em><br/>&amp; Audit CLI</h1>
+    <p class="sub">Agen audit keamanan otonom bergaya <b>Tactical Command &amp; Briefing Engine</b> untuk memeriksa
+      <em>source code</em>, konfigurasi infrastruktur, dan postur keamanan <em>endpoint</em> secara mandiri —
+      lengkap dengan verifikasi bukti (<em>zero false positive</em>) dan laporan SITREP siap mitigasi.</p>
+    <div class="badges">
+      <span class="badge"><b>Golang 100%</b> native stdlib</span>
+      <span class="badge"><b>MCP Client</b> JSON-RPC 2.0 over stdio</span>
+      <span class="badge"><b>Universal Provider</b> Ollama · vLLM · Groq · Gemini · OpenRouter · OpenAI</span>
+      <span class="badge"><b>Zero-False-Positive</b> evidence-based verification</span>
+    </div>
+
+    <div class="term">
+      <div class="term-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="term-title">operator@posko — kartika-agent</span></div>
+<pre><span class="c">[KARTIKA-AGENT // TACTICAL CORE v1.0]</span>
+STATUS : <span class="g">ONLINE</span> | ENGINE: llama-3.3-70b | MODUL AKTIF: 5 Built-in + 2 MCP
+
+<span class="w">MISI></span> Audit postur keamanan pada http://target.local/login.aspx, verifikasi setiap kelemahan beserta bukti teknisnya, dan susun SITREP mitigasi.
+
+<span class="c">[FASE 1: RECON]</span>   Memetakan struktur target &amp; mengambil profil awal ...
+<span class="c">[FASE 2: VERIFY]</span>  Memvalidasi response headers, atribut cookie, dan struktur form HTML ...
+<span class="c">[FASE 3: REPORT]</span>  Menyusun SITREP dan rekomendasi hardening konfigurasi ...
+
+====================================================================
+<span class="w">SITREP // LAPORAN HASIL AUDIT &amp; VERIFIKASI KEAMANAN</span>
+====================================================================
+<span class="r">[KRITIS]</span>  1. Transmisi Kredensial Tanpa Enkripsi (Cleartext HTTP)
+          • Bukti Verifikasi : Target merespons langsung di HTTP (Port 80)
+            tanpa header 'Strict-Transport-Security' maupun pengalihan HTTPS.
+<span class="y">[WASPADA]</span> 2. Kebocoran Sidik Jari Teknologi (Server Fingerprinting)
+          • Bukti Verifikasi : Header 'Server' dan 'X-AspNet-Version'
+            mengekspos versi spesifik IIS dan framework ASP.NET secara publik.
+<span class="y">[WASPADA]</span> 3. Ketiadaan Proteksi Anti-Clickjacking &amp; MIME Sniffing
+          • Bukti Verifikasi : Tidak ditemukan header 'X-Frame-Options',
+            'Content-Security-Policy', maupun 'X-Content-Type-Options'.
+
+REKOMENDASI MITIGASI:
+- Aktifkan HTTPS dengan HSTS, sembunyikan banner versi pada 'web.config',
+  dan terapkan security headers standar pada reverse proxy / IIS.
+====================================================================</pre>
+    </div>
+
+    <div class="install">
+      <code id="cmd">curl -fsSL https://kartika-agent.vercel.app/install.sh | bash</code>
+      <button class="btn" onclick="copyCmd()">SALIN</button>
+    </div>
+  </div>
+</div>
+
+<section id="fitur">
+  <div class="wrap">
+    <h2>Paradigma Operasi</h2>
+    <p class="lead">Mission-driven, verifikasi berbasis bukti, dan bisa ditanam di mana saja — dari posko operator sampai CI/CD satuan.</p>
+    <div class="grid">
+      <div class="card"><h3>MODE POSKO — Interactive Tactical Shell</h3>
+        <p>Operator memberi direktif misi langsung di terminal <code>MISI&gt;</code>; agen merespons dengan format <b>SITREP</b> yang tegas: Temuan, Bukti Validasi, Dampak, dan Langkah Mitigasi.</p></div>
+      <div class="card"><h3>MODE SENYAP — Headless <code>--mission</code></h3>
+        <p>Eksekusi satu-baris tanpa interaksi manual, cocok ditanamkan ke <b>CI/CD pipeline</b> untuk memblokir kode rentan naik ke produksi (exit code non-zero saat misi gagal).</p></div>
+      <div class="card"><h3>EVIDENCE-BASED VERIFICATION</h3>
+        <p>Agen tidak berhenti pada asumsi permukaan. Setiap indikasi kelemahan diverifikasi lewat alur logika kode, header/struktur respons aktual, lalu dicatat sebagai <b>Catatan Bukti Teknis</b> + patch perbaikan terukur.</p></div>
+      <div class="card"><h3>SOVEREIGN &amp; AGNOSTIC AI</h3>
+        <p>Standar <b>OpenAI-Compatible Chat Completions</b>: ganti <code>KARTIKA_API_URL</code>, <code>KARTIKA_API_KEY</code>, <code>KARTIKA_MODEL</code> untuk beralih antar-otak AI — tanpa mengubah kode.</p></div>
+      <div class="card"><h3>MODE AIR-GAPPED</h3>
+        <p>Di markas/satuan tanpa koneksi keluar, engine berjalan penuh di atas <b>Ollama</b> atau <b>vLLM</b> internal. Di fase pengujian, cukup arahkan ke Groq / Gemini / OpenRouter / OpenAI.</p></div>
+      <div class="card"><h3>EKSTENSIBEL VIA MCP</h3>
+        <p>Agen membaca <code>mcp.json</code>, menyalakan MCP Server eksternal sebagai child process, handshake <code>initialize</code>, lalu menyerap <code>tools/list</code> sebagai modul taktis tambahan — <b>tanpa menyentuh kode inti</b>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="arsitektur">
+  <div class="wrap">
+    <h2>Alur Pembentukan &amp; Runtime</h2>
+    <p class="lead">Lima tahap build pipeline dan siklus ReAct + Verification Loop di setiap misi.</p>
+<pre class="block">[Tahap 1: Inisialisasi Core Engine]        — setup modul Go &amp; environment (API_URL, API_KEY, MODEL)
+   ▼
+[Tahap 2: Built-in Tactical Modules]       — scan_dir, read_file, http_probe, write_file
+   ▼
+[Tahap 3: Integrasi MCP Stdio Bridge]      — parser mcp.json → spawn subprocess → JSON-RPC handshake → tool discovery
+   ▼
+[Tahap 4: ReAct Loop &amp; Verification]       — recon → inspect &amp; verify evidence → SITREP + remediation patch
+   ▼
+[Tahap 5: Cross-Compilation &amp; Distribusi]  — binary Linux/Windows/macOS → GitHub Releases → Vercel portal</pre>
+
+    <h2 style="margin-top:44px">Siklus Eksekusi Misi</h2>
+    <ol class="steps">
+      <li><b>Bootstrapping</b> — memuat konfigurasi LLM, membaca <code>mcp.json</code>, menyatukan modul bawaan + modul MCP ke satu registri JSON Schema.</li>
+      <li><b>Input Direktif Misi</b> — melalui terminal interaktif (mode posko) atau flag <code>--mission</code> (mode senyap).</li>
+      <li><b>Fase 1 RECON</b> — pemetaan struktur direktori (<code>scan_dir</code>) atau pengambilan profil target (<code>http_probe</code>).</li>
+      <li><b>Fase 2 INSPECT &amp; VERIFY</b> — membaca <em>source code</em> (<code>read_file</code>), membedah header, atribut cookie, dan elemen form HTML untuk memastikan kelemahan valid (menyingkirkan <em>false positive</em>).</li>
+      <li><b>Fase 3 REPORT &amp; REMEDIATE</b> — merangkum hasil validasi ke laporan <b>SITREP</b> dan menulis file patch/rekomendasi konfigurasi (<code>write_file</code>).</li>
+    </ol>
+  </div>
+</section>
+
+<section id="instalasi">
+  <div class="wrap">
+    <h2>Instalasi</h2>
+    <p class="lead">Distribusi dua lapis: portal ini menyediakan dokumentasi + skrip installer; binary pra-kompilasi tersedia di GitHub Releases.</p>
+
+    <div class="grid">
+      <div class="card"><h3>Opsi A — Installer Otomatis</h3>
+        <p><code>curl -fsSL https://kartika-agent.vercel.app/install.sh | bash</code><br/><br/>
+        Skrip mendeteksi OS &amp; arsitektur, mengunduh binary dari GitHub Releases, lalu memasangnya ke <code>/usr/local/bin</code>.</p></div>
+      <div class="card"><h3>Opsi B — Unduh Manual</h3>
+        <p><code>kartika-agent-linux-amd64</code><br/><code>kartika-agent-windows-amd64.exe</code><br/><code>kartika-agent-darwin-arm64</code><br/><br/>
+        Unduh dari halaman Releases, beri izin eksekusi <code>chmod +x</code>, tempatkan di PATH.</p></div>
+      <div class="card"><h3>Opsi C — Build dari Source</h3>
+        <p><code>git clone</code> repo, lalu <code>bash build.sh</code> atau <code>make dist</code>. Membutuhkan Go ≥ 1.21. Hasil cross-compile di folder <code>dist/</code>.</p></div>
+    </div>
+
+    <table>
+      <tr><th>Perintah</th><th>Fungsi</th></tr>
+      <tr><td><code>kartika-agent</code></td><td>Membuka Mode Posko (shell taktis interaktif)</td></tr>
+      <tr><td><code>kartika-agent --mission "Audit postur keamanan http://target"</code></td><td>Mode senyap/headless — eksekusi tunggal untuk CI/CD</td></tr>
+      <tr><td><code>kartika-agent --provider groq</code></td><td>Memilih profil provider AI (ollama|vllm|groq|openai|openrouter|gemini)</td></tr>
+      <tr><td><code>kartika-agent --no-mcp --no-color</code></td><td>Nonaktifkan MCP bridge / warna ANSI</td></tr>
+      <tr><td><code>kartika-agent --version</code></td><td>Tampilkan versi TACTICAL CORE</td></tr>
+    </table>
+  </div>
+</section>
+
+<section id="konfigurasi">
+  <div class="wrap">
+    <h2>Konfigurasi Engine AI</h2>
+    <p class="lead">Satu skema, banyak otak. Semua provider di bawah memakai endpoint OpenAI-Compatible yang sama.</p>
+    <table>
+      <tr><th>Mode</th><th>KARTIKA_API_URL</th><th>Catatan</th></tr>
+      <tr><td><b>Ollama</b> (air-gapped)</td><td><code>http://localhost:11434/v1</code></td><td>Default. Tanpa koneksi internet keluar.</td></tr>
+      <tr><td><b>vLLM</b> (air-gapped)</td><td><code>http://server-satuan:8000/v1</code></td><td>Server inferensi internal TNI AD.</td></tr>
+      <tr><td><b>Groq</b></td><td><code>https://api.groq.com/openai/v1</code></td><td>Cloud cepat untuk pengujian/evaluasi.</td></tr>
+      <tr><td><b>Gemini</b></td><td><code>https://generativelanguage.googleapis.com/v1beta/openai</code></td><td>Endpoint OpenAI-Compatible resmi.</td></tr>
+      <tr><td><b>OpenRouter</b></td><td><code>https://openrouter.ai/api/v1</code></td><td>Akses banyak model sekaligus.</td></tr>
+      <tr><td><b>OpenAI</b></td><td><code>https://api.openai.com/v1</code></td><td>Endpoint resmi OpenAI.</td></tr>
+    </table>
+
+    <h2 style="margin-top:44px">Ekspansi Modul via mcp.json</h2>
+    <p class="lead">Kemampuan agen dapat diperluas kapan saja (Git forensics, SQLite inspection, Docker audit, network diagnostics) tanpa mengubah kode inti Golang.</p>
+<pre class="block">{
+  "mcpServers": {
+    "filesystem": { "command": "npx",  "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] },
+    "git":        { "command": "uvx",  "args": ["mcp-server-git", "--repository", "."] },
+    "sqlite":     { "command": "uvx",  "args": ["mcp-server-sqlite", "--db-path", "./app.db"] }
+  }
+}</pre>
+    <div class="note">ETIKA OPERASI — KARTIKA-AGENT hanya untuk audit sistem milik sendiri atau sistem yang telah mendapat izin tertulis. Penggunaan terhadap target tanpa izin melanggar hukum dan disiplin satuan.</div>
+  </div>
+</section>
+
+<footer>
+  <span class="brand">KARTIKA-AGENT // TACTICAL CORE v1.0</span>
+  Built with Golang 100% Native Standard Library · MCP Client (JSON-RPC 2.0 over Stdio) · Distribution: Vercel → GitHub Releases → Terminal Operator
+</footer>
+
+<script>
+function copyCmd(){
+  var t = document.getElementById('cmd').innerText;
+  navigator.clipboard.writeText(t).then(function(){
+    var b = document.querySelector('.btn'); var old = b.innerText;
+    b.innerText = 'TERSALIN';
+    setTimeout(function(){ b.innerText = old; }, 1600);
+  });
+}
+</script>
+</body>
+</html>
