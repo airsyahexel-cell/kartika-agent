@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -50,6 +51,7 @@ const (
 	kPgUp
 	kPgDn
 	kAltDigit
+	kMouse
 	kPaste
 	kOther
 )
@@ -57,7 +59,7 @@ const (
 type keyEvent struct {
 	kind keyKind
 	r    rune
-	text string // isi paste (hanya kPaste)
+	text string // isi paste / data mouse "btn;x;y;rel" (rel: true = lepas)
 }
 
 // filterSlash menyaring daftar perintah sesuai awalan yang diketik.
@@ -159,6 +161,34 @@ func readKey(r *bufio.Reader) keyEvent {
 			return keyEvent{kind: kOther}
 		}
 		switch c2 {
+		case '<': // mouse SGR: ESC [ < btn ; x ; y M|m
+			var sb []byte
+			for {
+				c3, err2 := r.ReadByte()
+				if err2 != nil {
+					return keyEvent{kind: kOther}
+				}
+				sb = append(sb, c3)
+				if c3 == 'M' || c3 == 'm' {
+					break
+				}
+				if len(sb) > 32 {
+					return keyEvent{kind: kOther}
+				}
+			}
+			rel := sb[len(sb)-1] == 'm'
+			body := string(sb[:len(sb)-1])
+			parts := strings.SplitN(body, ";", 3)
+			if len(parts) != 3 {
+				return keyEvent{kind: kOther}
+			}
+			btn, e1 := strconv.Atoi(parts[0])
+			x, e2 := strconv.Atoi(parts[1])
+			y, e3 := strconv.Atoi(parts[2])
+			if e1 != nil || e2 != nil || e3 != nil {
+				return keyEvent{kind: kOther}
+			}
+			return keyEvent{kind: kMouse, r: rune(btn), text: fmt.Sprintf("%d;%d;%v", x, y, rel)}
 		case 'A':
 			return keyEvent{kind: kUp}
 		case 'B':

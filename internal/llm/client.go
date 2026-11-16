@@ -235,6 +235,21 @@ func (c *Client) Chat(msgs []Message, tools []ToolDef) (Message, error) {
 	return Message{}, lastErr
 }
 
+// IsClientError melaporkan apakah error merupakan kegagalan klien (4xx selain 429)
+// yang tidak akan berhasil jika dicoba ulang (mis. model salah, API key ditolak).
+func IsClientError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	for _, code := range []string{"HTTP 400", "HTTP 401", "HTTP 403", "HTTP 404", "HTTP 422"} {
+		if strings.Contains(s, code) {
+			return true
+		}
+	}
+	return false
+}
+
 // ChatStream sama dengan Chat, namun meminta endpoint mengalirkan jawaban
 // (Server-Sent Events, "stream": true). Setiap potongan teks diteruskan ke
 // onDelta segera saat diterima sehingga jawaban muncul token demi token di
@@ -268,6 +283,9 @@ func (c *Client) ChatStream(msgs []Message, tools []ToolDef, onDelta func(string
 		}
 		if isCanceled(err) || strings.Contains(err.Error(), "ctrl+c") {
 			return Message{}, err // dibatalkan operator — JANGAN retry/fallback
+		}
+		if IsClientError(err) {
+			return Message{}, err // 4xx permanen (404 model tidak ada, 401 ditolak, dll) — langsung laporkan
 		}
 		if emitted {
 			// Sebagian teks sudah tercetak — jangan ulangi (risiko dobel).
@@ -335,7 +353,7 @@ func (c *Client) streamOnce(req chatRequest, onDelta func(string), onReasoning f
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var content strings.Builder
-	deltas := 0        // jumlah potongan teks yang sudah diteruskan ke onDelta
+	deltas := 0          // jumlah potongan teks yang sudah diteruskan ke onDelta
 	reasonShown := false // true bila reasoning sudah mengalir ke pemanggil
 	type tcAcc struct {
 		call ToolCall

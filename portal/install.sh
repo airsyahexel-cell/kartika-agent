@@ -106,6 +106,14 @@ ASSET="kartika-agent-${os}-${arch}"
 URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
 
 echo "[INSTALL] Mendeteksi  : ${os}-${arch}"
+echo "[INSTALL] Repo rilis  : https://github.com/${REPO}"
+echo "[INSTALL] Halaman     : https://github.com/${REPO}/releases"
+
+# Bila kartika sudah terpasang, beri tahu jalur pembaruan termudah.
+if command -v kartika >/dev/null 2>&1; then
+  echo "[INSTALL] Terdeteksi  : kartika $(kartika --version 2>/dev/null | head -1)"
+  echo "[INSTALL] Pembaruan   : cukup jalankan 'kartika' lalu ketik /update"
+fi
 echo "[INSTALL] Mengunduh   : ${URL}"
 
 TMP="$(mktemp -d)"
@@ -136,3 +144,5 @@ patch_shell_configs "$DEST"
 
 "$DEST/kartika" --version
 echo "[INSTALL] Selesai. Buka terminal baru lalu ketik: kartika"
+echo "[INSTALL] Repo    : https://github.com/${REPO}"
+echo "[INSTALL] Update  : di dalam kartika ketik /update (cek rilis + pasang binary baru)"

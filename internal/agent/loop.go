@@ -169,7 +169,7 @@ PUSTAKA SKILL (metodologi profesional — skill_list / skill_read / skill_search
 PROTOKOL PENUGASAN (ReAct loop)
 1. FASE 1 RECON   — petakan target secara MENYELURUH: scan_dir untuk struktur source code, grep_code untuk inventaris field input & endpoint ("$_GET", "req.query", "fetch(", "query("), http_probe untuk profil postur endpoint, run_cmd untuk recon jaringan/sistem (nmap, dig, ss, ps, dsb. sesuai kebutuhan) dan fingerprint versi (X-Powered-By, Server, banner layanan). Dari setiap respons, periksa bagian "Aset & Tautan Terdeteksi" dan probe telusuri setiap entri yang relevan (script .js, stylesheet, iframe, link internal, file .config/.json/.txt) hingga permukaan target terpetakan penuh — JANGAN berhenti di halaman pertama. Untuk aplikasi berlogin: dapatkan akses terlebih dahulu (kredensial operator, registrasi mandiri, atau kredensial default) — area pasca-login WAJIB diaudit juga karena di sanalah IDOR/BOLA dan logic bug biasanya berada.
 2. FASE 2 VERIFY  — dalami dan BUKTIKAN: read_file untuk alur logika kode (kutip path+baris), grep_code untuk melacak field input → sink lalu BANGUN payload dari sink aktual (lihat ANALISA SOURCE → PAYLOAD), http_probe untuk profil postur endpoint, http_request untuk UJI AKTIF ber-state: (a) POST login dengan session="user" — cookie sesi tersimpan dan otomatis terkirim di panggilan berikutnya; (b) ulangi login dengan session="admin"/"user2" untuk identitas kedua; (c) mode diff membandingkan respons dua sesi pada endpoint sama — perbedaan body = bukti broken access control/IDOR. WAJIB bila registrasi mandiri tersedia: buat minimal DUA akun uji dan cocokkan aksesnya via diff. run_cmd untuk uji aktif lain (curl, openssl, nmap, kredensial default layanan), modul browser MCP (playwright) untuk alur interaktif (login form, klik, DOM snapshot), INTELEJEN CVE dari fingerprint arsitektur (versi → kelemahan yang diketahui → uji PoC), dan validasi/pendalaman SEKRET & aset non-klasik (PERBURUAN SEKRET). Setiap temuan kandidat langsung DIBUATKAN DAN DIEKSEKUSI PoC-nya di fase ini — JANGAN menumpuk kandidat tanpa pembuktian. Setiap temuan (apa pun severitasnya) diuji jalur ESKALASI DAMPAK & RANTAI BUG-nya — temuan yang membuka pintu baru (akses, kredensial, endpoint) membuka kembali FASE 1/2 untuk area yang baru terjangkau.
-3. FASE 3 REPORT  — susun SITREP final, lalu SELALU simpan laporan + bukti ke file di folder "sitrep/" menggunakan write_file (contoh: sitrep/sitrep-<slug-target>.md). GERBANG MASUK FASE 3: cek DOKTRIN KEDALAMAN & CAKUPAN — semua aset × vektor relevan harus berstatus jelas (TERBUKTI/BERSIH/TERBLOKIR). Laporan hanya disusun SETELAH permukaan target habis ditelusuri dan seluruh temuan kandidat sudah dibuktikan atau ditutup [INFO], dan SITREP WAJIB memuat bagian COVERAGE (aset × vektor × status).
+3. FASE 3 REPORT  — susun SITREP final, lalu SELALU simpan laporan + bukti ke file di folder "sitrep/" menggunakan write_file (contoh: sitrep/sitrep-<slug-target>.md). Bila folder sitrep/ tidak ada di direktori kerja, modul OTOMATIS menyimpannya ke folder sitrep di HOME user (mis. /home/user/sitrep; Windows %USERPROFILE%\sitrep; macOS ~/sitrep) — SITREP harus menyebut path akhir yang tercantum di hasil write_file. GERBANG MASUK FASE 3: cek DOKTRIN KEDALAMAN & CAKUPAN — semua aset × vektor relevan harus berstatus jelas (TERBUKTI/BERSIH/TERBLOKIR). Laporan hanya disusun SETELAH permukaan target habis ditelusuri dan seluruh temuan kandidat sudah dibuktikan atau ditutup [INFO], dan SITREP WAJIB memuat bagian COVERAGE (aset × vektor × status).
 
 ATURAN BUKTI (EVIDENCE-BASED)
 - Setiap klaim tentang kode WAJIB berasal dari scan_dir/read_file; setiap klaim tentang endpoint/layanan jaringan WAJIB berasal dari http_probe/run_cmd.
@@ -311,9 +311,12 @@ func (a *Agent) RunChat(directive string, view ChatUI) error {
 				}
 			})
 		if err != nil && stepContent.Len() == 0 {
+			stopSP()
+			if llm.IsClientError(err) {
+				return err // kegagalan 4xx (model tidak ditemukan / API key ditolak) — jangan tunggu retry
+			}
 			// Tidak ada apa pun yang ter-stream — coba sekali lagi sebelum
 			// menyerah (jaringan sesekali putus sesaat).
-			stopSP()
 			time.Sleep(3 * time.Second)
 			resp, err = a.llm.ChatStream(msgs, defs,
 				func(d string) {

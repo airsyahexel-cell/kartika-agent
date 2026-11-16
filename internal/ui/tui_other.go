@@ -68,6 +68,10 @@ func (t *TUI) SwitchTab(int) {}
 // SetTabHook tidak melakukan apa-apa (stub).
 func (t *TUI) SetTabHook(func(int)) {}
 
+// SetTabCloseHook tidak melakukan apa-apa (stub) — klik ikon × pada header
+// hanya ada di mode layar penuh unix.
+func (t *TUI) SetTabCloseHook(func(int)) {}
+
 // SetTabTitle tidak melakukan apa-apa (stub).
 func (t *TUI) SetTabTitle(string) {}
 
@@ -84,3 +88,7 @@ func ReadInputTUI(t *TUI, prefix string) (string, error) {
 	}
 	return line, nil
 }
+
+// ReadPickerTUI tidak tersedia pada platform ini — pemanggil (main.go)
+// otomatis memakai fallback daftar bernomor di CLI polos.
+func ReadPickerTUI(title string, items []PickerItem) (int, bool) { return -1, false }

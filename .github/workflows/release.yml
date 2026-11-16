@@ -30,8 +30,18 @@ jobs:
       - name: Build
         run: |
           mkdir -p dist
+          VER="${{ github.ref_name }}"
+          VER="${VER#v}"
+          echo "Versi tertanam: v$VER"
           CGO_ENABLED=0 GOAMD64=v1 GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
-            go build -ldflags="-s -w" -o dist/kartika-agent-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} .
+            go build -ldflags="-s -w -X main.version=$VER" \
+            -o dist/kartika-agent-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} .
+
+      - name: Checksum SHA-256
+        run: |
+          cd dist
+          sha256sum kartika-agent-* > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Upload ke GitHub Release
         uses: softprops/action-gh-release@v2

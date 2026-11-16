@@ -47,11 +47,13 @@ func buildSlashCommands(local bool) []SlashCommand {
 		cmds = append(cmds,
 			SlashCommand{"/pilih model", "pilih / ganti model AI (KARTIKA_MODEL)"},
 			SlashCommand{"/konfigurasi-api-key", "konfigurasi lengkap: URL, API Key & Model"},
+			SlashCommand{"/konfigurasi-model-lokal", "wizard engine LOKAL (Ollama/vLLM/LM Studio) tanpa API key"},
 		)
 	} else {
 		cmds = append(cmds,
 			SlashCommand{"/konfigurasi-api-key", "konfigurasi lengkap: URL, API Key & Model"},
 			SlashCommand{"/pilih model", "pilih / ganti model AI (KARTIKA_MODEL)"},
+			SlashCommand{"/konfigurasi-model-lokal", "wizard engine LOKAL (Ollama/vLLM/LM Studio) tanpa API key"},
 		)
 	}
 	cmds = append(cmds,
@@ -62,6 +64,7 @@ func buildSlashCommands(local bool) []SlashCommand {
 		SlashCommand{"/pikir", "tampilkan/sembunyikan pemikiran model (ctrl+b)"},
 		SlashCommand{"/bersih", "bersihkan layar dan tampilkan ulang banner"},
 		SlashCommand{"/baru", "sesi baru — hapus memori percakapan"},
+		SlashCommand{"/update", "perbarui kartika — cek rilis repo, pasang binary/checksum atau build ulang"},
 		SlashCommand{"/bantuan", "tampilkan bantuan"},
 		SlashCommand{"/keluar", "tutup sesi posko"},
 	)
@@ -351,6 +354,78 @@ func ToolLine(name, args string) {
 // ToolOK mencetak ringkasan hasil modul yang sukses.
 func ToolOK(preview string) { out(fmt.Sprintf("  %s %s", Green("[SELESAI]"), Dim(preview))) }
 
+// warnaiBaris menambahkan warna pada satu baris utuh keluaran model:
+// judul markdown → cyan tebal, severity temuan → warna berdasarkan
+// tingkatnya, status coverage → hijau/kuning/redup.
+func warnaiBaris(ln string) string {
+	t := strings.TrimSpace(ln)
+	if t == "" {
+		return ln
+	}
+	// Judul markdown (SITREP/temuan) → cyan tebal.
+	if strings.HasPrefix(ln, "#") {
+		return Bold(Cyan(ln))
+	}
+	// Garis bingkai panjang → redup.
+	if len(t) > 12 && (strings.HasPrefix(t, "===") || strings.HasPrefix(t, "---")) {
+		return Dim(ln)
+	}
+	ln = strings.ReplaceAll(ln, "[INFO]", Dim("[INFO]"))
+	ln = strings.ReplaceAll(ln, "KRITIS", Bold(Red("KRITIS")))
+	ln = strings.ReplaceAll(ln, "CRITICAL", Bold(Red("CRITICAL")))
+	ln = strings.ReplaceAll(ln, "TINGGI", Red("TINGGI"))
+	ln = strings.ReplaceAll(ln, "SEDANG", Yellow("SEDANG"))
+	ln = strings.ReplaceAll(ln, "MEDIUM", Yellow("MEDIUM"))
+	ln = strings.ReplaceAll(ln, "RENDAH", Green("RENDAH"))
+	ln = strings.ReplaceAll(ln, "LOW", Green("LOW"))
+	// Status coverage (bagian COVERAGE SITREP).
+	ln = strings.ReplaceAll(ln, "TERBUKTI", Bold(Red("TERBUKTI")))
+	ln = strings.ReplaceAll(ln, "BERSIH", Green("BERSIH"))
+	ln = strings.ReplaceAll(ln, "TERBLOKIR", Yellow("TERBLOKIR"))
+	ln = strings.ReplaceAll(ln, "BELUM", Dim("BELUM"))
+	return ln
+}
+
+// deltaColorizer mewarnai aliran teks model secara bertahap: chunk token
+// sering memotong di tengah baris, jadi baris ditahan hingga utuh lalu
+// diwarna; baris parsial terakhir lolos apa adanya — teks tidak pernah
+// hilang, pewarnaan menyusul saat baris selesai.
+type deltaColorizer struct {
+	buf strings.Builder
+}
+
+// Colorize menerima chunk baru dan mengembalikan teks siap cetak/append.
+func (d *deltaColorizer) Colorize(chunk string) string {
+	d.buf.WriteString(chunk)
+	s := d.buf.String()
+	idx := strings.LastIndex(s, "\n")
+	if idx < 0 {
+		return chunk // belum ada baris utuh — pass-through
+	}
+	d.buf.Reset()
+	d.buf.WriteString(s[idx+1:])
+	var b strings.Builder
+	for _, ln := range strings.SplitAfter(s[:idx+1], "\n") {
+		if ln == "" {
+			continue
+		}
+		if strings.HasSuffix(ln, "\n") {
+			b.WriteString(warnaiBaris(strings.TrimSuffix(ln, "\n")))
+			b.WriteString("\n")
+		} else {
+			b.WriteString(ln) // baris parsial — apa adanya
+		}
+	}
+	return b.String()
+}
+
+// NewDeltaColorizer membangun pewarnai aliran keluaran model (satu instance
+// per giliran chat; memegang buffer baris parsial antar chunk).
+func NewDeltaColorizer() func(string) string {
+	d := &deltaColorizer{}
+	return d.Colorize
+}
+
 // ToolFail mencetak ringkasan modul yang gagal.
 func ToolFail(preview string) { out(fmt.Sprintf("  %s %s", Red("[GAGAL]"), Red(preview))) }
 
@@ -453,9 +528,10 @@ var (
 // SetLiveInputHandlers memasang perilaku input-live selama engine bekerja:
 // operator tetap bisa mengetik saat engine berjalan, menempel teks (paste)
 // tanpa menjalankan apa pun, dan menghentikan giliran chat dengan Ctrl+C.
-//   render: dipanggil tiap buffer berubah ("" = kosong);
-//   submit: dipanggil saat Enter dengan teks yang diketik;
-//   abort : dipanggil saat Ctrl+C — menghentikan giliran chat berjalan.
+//
+//	render: dipanggil tiap buffer berubah ("" = kosong);
+//	submit: dipanggil saat Enter dengan teks yang diketik;
+//	abort : dipanggil saat Ctrl+C — menghentikan giliran chat berjalan.
 func SetLiveInputHandlers(render func(string), submit func(string), abort func()) {
 	liveRender, liveSubmit, liveAbort = render, submit, abort
 }

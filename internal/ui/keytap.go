@@ -14,6 +14,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -153,6 +154,8 @@ func NewKeyTap() *KeyTap {
 // readEscapeSeq membaca satu urutan escape setelah byte 0x1b.
 // Mengembalikan isi teks paste bila urutan adalah bracketed paste
 // (ESC [ 200 ~ … ESC [ 201 ~). ok=false bila stdin tertutup.
+// Peristiwa mouse SGR (ESC[<b;x;yM/m) diteruskan ke TUI aktif: wheel =
+// scroll transkrip/menu, klik header = pindah/tab baru/tutup tab.
 func readEscapeSeq(r *bufio.Reader) (seq string, isPaste, ok bool) {
 	b, err := r.ReadByte()
 	if err != nil {
@@ -161,6 +164,25 @@ func readEscapeSeq(r *bufio.Reader) (seq string, isPaste, ok bool) {
 	if b != '[' {
 		// ESC O ... atau alt+tombol: buang satu byte parameternya (jika ada)
 		return "", false, true
+	}
+	// mouse SGR: ESC [ < btn ; x ; y M|m — tangani seketika lalu buang.
+	if b2, err := r.ReadByte(); err == nil {
+		if b2 == '<' {
+			var msb []byte
+			for {
+				c3, err2 := r.ReadByte()
+				if err2 != nil {
+					return "", false, false
+				}
+				msb = append(msb, c3)
+				if c3 == 'M' || c3 == 'm' || len(msb) > 32 {
+					break
+				}
+			}
+			handleMouseSGR(string(msb))
+			return "", false, true
+		}
+		_ = r.UnreadByte()
 	}
 	// baca hingga '~' atau huruf pengakhir
 	var sb []byte
@@ -250,4 +272,67 @@ func collapsePaste(s string) string {
 func (k *KeyTap) Stop() {
 	close(k.stop)
 	<-k.done
+}
+
+// handleMouseSGR meneruskan peristiwa mouse (format SGR "btn;x;yM|m")
+// ke TUI aktif saat engine bekerja: wheel = scroll transkrip (dua jari di
+// touchpad) atau menu bila menu saran terbuka; klik di bar header =
+// pindah tab / [+tab] / tombol × tutup tab. Peristiwa lain diabaikan.
+func handleMouseSGR(body string) {
+	t := activeTUI
+	if t == nil {
+		return
+	}
+	rel := strings.HasSuffix(body, "m")
+	body = strings.TrimSuffix(body, "m")
+	body = strings.TrimSuffix(body, "M")
+	parts := strings.SplitN(body, ";", 3)
+	if len(parts) != 3 {
+		return
+	}
+	btn, err1 := strconv.Atoi(parts[0])
+	x, err2 := strconv.Atoi(parts[1])
+	y, err3 := strconv.Atoi(parts[2])
+	if err1 != nil || err2 != nil || err3 != nil {
+		return
+	}
+	t.mu.Lock()
+	zones := append([]hdrZone(nil), t.headerZones...)
+	mBaseY, mWinRows := t.menuBaseY, t.menuWinRows
+	t.mu.Unlock()
+	switch btn {
+	case 64, 65: // wheel: menu aktif → geser menu; selain itu → transkrip
+		if len(t.menu) > 0 {
+			if btn == 64 {
+				t.ScrollMenu(-1)
+			} else {
+				t.ScrollMenu(1)
+			}
+		} else if btn == 64 {
+			t.Scroll(3)
+		} else {
+			t.Scroll(-3)
+		}
+	case 0, 1, 2: // klik
+		if rel {
+			return // hanya proses tekan (bukan lepas)
+		}
+		if y == 1 { // bar header: tab / [+tab] / ×
+			for _, z := range zones {
+				if x >= z.start && x <= z.end {
+					switch z.kind {
+					case 't':
+						t.SwitchTab(z.tab)
+					case 'a':
+						t.AddTab()
+					case 'c':
+						t.CloseTab(t.Current())
+					}
+					return
+				}
+			}
+		}
+		_ = mBaseY
+		_ = mWinRows
+	}
 }

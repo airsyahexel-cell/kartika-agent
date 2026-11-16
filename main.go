@@ -14,7 +14,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,9 +30,14 @@ import (
 	"kartika-agent/internal/mcp"
 	"kartika-agent/internal/tools"
 	"kartika-agent/internal/ui"
+	"kartika-agent/internal/update"
 )
 
-const version = "1.1.0"
+// version adalah versi yang dilaporkan HUD & dipakai /update untuk
+// membandingkan rilis. Workflow rilis menimpanya lewat
+// -ldflags "-X main.version=<tag>", jadi nilai di sini cukup mengikuti
+// tag rilis terakhir yang sudah ditandai di repo.
+var version = "1.2.0"
 
 func main() {
 	mission := flag.String("mission", "", "Direktif chat — jalankan sekali lalu keluar (mode headless/CI)")
@@ -96,6 +103,10 @@ func main() {
 	if n := tools.SkillsCount(); n > 0 {
 		ui.Info(fmt.Sprintf("PUSTAKA SKILL : %d skill @ %s", n, tools.SkillsRoot()))
 	}
+
+	// workDir dipakai /update untuk build ulang dari source: bila program
+	// dijalankan dari dalam repo, direktori kerja saat ini adalah akar repo.
+	workDir, _ := os.Getwd()
 
 	// Pesan konfigurasi lengkap hanya ditampilkan SEKALI per sesi;
 	// kegagalan berikutnya cukup pengingat satu-baris.
@@ -200,7 +211,7 @@ func main() {
 		started time.Time
 		pending []llm.Message
 	}
-	tabs := map[int]*tabState{0: {ag: ag, sesiID: sesiID, started: sesiMulai}}
+	tabs := []*tabState{{ag: ag, sesiID: sesiID, started: sesiMulai}} // sinkron dengan index tab TUI
 	curTab := 0
 	saveTab := func(ts *tabState) {
 		if ts == nil || ts.ag == nil {
@@ -276,18 +287,34 @@ func main() {
 		// Hook tab: TUI memanggil ini saat tab baru dibuat (ctrl+t) atau
 		// pandang berpindah (alt+1..9) — main menukar ag + sesi aktif.
 		tui.SetTabHook(func(idx int) {
-			if ts, ok := tabs[curTab]; ok {
-				saveTab(ts) // simpan sesi tab yang ditinggalkan
+			if curTab >= 0 && curTab < len(tabs) {
+				saveTab(tabs[curTab]) // simpan sesi tab yang ditinggalkan
 			}
 			curTab = idx
-			ts := tabs[idx]
-			if ts == nil {
+			var ts *tabState
+			if idx >= 0 && idx < len(tabs) {
+				ts = tabs[idx]
+			} else {
 				ts = &tabState{ag: agent.New(cfg, engine, reg), sesiID: newSessionID(), started: time.Now()}
-				tabs[idx] = ts
+				tabs = append(tabs, ts)
 			}
 			sesiID = ts.sesiID
 			tui.SetTabTitle(ts.sesiID)
 			tui.SetStatus(statusIdle(ts.sesiID))
+		})
+		// Hook tutup tab (klik ikon × di header): sesi tab yang ditutup
+		// disimpan, agen dibatalkan bila engine masih berjalan di sana,
+		// dan slice utama disinkronkan dengan index TUI.
+		tui.SetTabCloseHook(func(idx int) {
+			if idx < 0 || idx >= len(tabs) {
+				return
+			}
+			saveTab(tabs[idx])
+			tabs[idx].ag.Interrupt() // no-op bila engine sedang diam
+			tabs = append(tabs[:idx], tabs[idx+1:]...)
+			if curTab >= len(tabs) {
+				curTab = len(tabs) - 1
+			}
 		})
 		tui.SetTabTitle(sesiID)
 		tui.Append(ui.Bold(ui.Cyan("[KARTIKA-AGENT // TACTICAL CORE v" + version + "]")))
@@ -295,7 +322,19 @@ func main() {
 		if resumeNotice != "" {
 			tui.Append(ui.Dim("  " + resumeNotice))
 		}
+		if up := updateBanner(); up != "" {
+			tui.Append(up)
+		}
 		tui.SetStatus(statusIdle(sesiID))
+		// Picker interaktif (anak panah warna + mouse) untuk /model,
+		// /api-url, dan wizard konfigurasi — dipasok ReadPickerTUI.
+		pickerTUI := func(title string, items []ui.PickerItem) (string, bool) {
+			idx, ok := ui.ReadPickerTUI(title, items)
+			if !ok {
+				return "", false
+			}
+			return items[idx].Label, true
+		}
 		missions := 0
 		for {
 			line, err := ui.ReadInputTUI(tui, "CHAT ❯")
@@ -361,19 +400,33 @@ func main() {
 			case "/konfigurasi-api-key", "konfigurasi-api-key", "/konfigurasi", "konfigurasi", "/config", "config", "/masukan-api-key", "masukan-api-key", "/api-key", "api-key", "/apikey", "apikey":
 				handleKonfigurasiAPIKey(cfg, engine, func(p string) (string, error) {
 					return ui.ReadInputTUI(tui, p)
-				}, tui.Append)
+				}, tui.Append, pickerTUI)
+				tui.SetStatus(statusIdle(sesiID))
+				continue
+			case "/konfigurasi-model-lokal", "konfigurasi-model-lokal", "/model-lokal", "model-lokal", "/lokal", "lokal":
+				handleKonfigurasiModelLokal(cfg, engine, func(p string) (string, error) {
+					return ui.ReadInputTUI(tui, p)
+				}, tui.Append, pickerTUI)
 				tui.SetStatus(statusIdle(sesiID))
 				continue
 			case "/pilih model", "pilih model", "/pilih-model", "pilih-model", "/model", "model":
 				handlePilihModel("", cfg, engine, func(p string) (string, error) {
 					return ui.ReadInputTUI(tui, p)
-				}, tui.Append)
+				}, tui.Append, pickerTUI)
 				tui.SetStatus(statusIdle(sesiID))
 				continue
 			case "/api-url", "api-url", "/url", "url":
 				handleAPIURL("", cfg, engine, func(p string) (string, error) {
 					return ui.ReadInputTUI(tui, p)
-				}, tui.Append)
+				}, tui.Append, pickerTUI)
+				tui.SetStatus(statusIdle(sesiID))
+				continue
+			case "/update", "update", "/perbarui", "perbarui", "/upgrade":
+				tui.Clear()
+				tui.Append(ui.Bold(ui.Cyan("[KARTIKA-AGENT // TACTICAL CORE v" + version + "]")))
+				handleUpdate("", func(p string) (string, error) {
+					return ui.ReadInputTUI(tui, p)
+				}, tui.Append, pickerTUI, workDir)
 				tui.SetStatus(statusIdle(sesiID))
 				continue
 			}
@@ -389,7 +442,14 @@ func main() {
 				if strings.HasPrefix(low, "/konfigurasi-api-key") || strings.HasPrefix(low, "/masukan-api-key") || strings.HasPrefix(low, "/konfigurasi") {
 					handleKonfigurasiAPIKey(cfg, engine, func(p string) (string, error) {
 						return ui.ReadInputTUI(tui, p)
-					}, tui.Append)
+					}, tui.Append, pickerTUI)
+					tui.SetStatus(statusIdle(sesiID))
+					continue
+				}
+				if strings.HasPrefix(low, "/konfigurasi-model-lokal") || strings.HasPrefix(low, "/model-lokal") || strings.HasPrefix(low, "/lokal") {
+					handleKonfigurasiModelLokal(cfg, engine, func(p string) (string, error) {
+						return ui.ReadInputTUI(tui, p)
+					}, tui.Append, pickerTUI)
 					tui.SetStatus(statusIdle(sesiID))
 					continue
 				}
@@ -403,7 +463,7 @@ func main() {
 					}
 					handlePilihModel(arg, cfg, engine, func(p string) (string, error) {
 						return ui.ReadInputTUI(tui, p)
-					}, tui.Append)
+					}, tui.Append, pickerTUI)
 					tui.SetStatus(statusIdle(sesiID))
 					continue
 				}
@@ -415,7 +475,7 @@ func main() {
 					}
 					handleAPIURL(arg, cfg, engine, func(p string) (string, error) {
 						return ui.ReadInputTUI(tui, p)
-					}, tui.Append)
+					}, tui.Append, pickerTUI)
 					tui.SetStatus(statusIdle(sesiID))
 					continue
 				}
@@ -468,10 +528,11 @@ func main() {
 			}
 			tui.SetThinking(true, "engine berpikir")
 			tap := ui.NewKeyTap()
+			warnaiDelta := ui.NewDeltaColorizer()
 			err = tabAg.RunChat(line, agent.ChatUI{
 				OnDelta: func(d string) {
 					flushReason()
-					tui.Append(d)
+					tui.Append(warnaiDelta(d))
 				},
 				OnReasoning: func(r string) bool {
 					if !reasonOn.Load() {
@@ -508,6 +569,9 @@ func main() {
 
 	// ---------- CLI POLOS (pipe/CI atau terminal tanpa dukungan TUI) ----------
 	ui.PrintPoskoHelp()
+	if up := updateBanner(); up != "" {
+		ui.Info(up)
+	}
 	missions := 0
 	for {
 		line, err := ui.ReadInput("CHAT ❯")
@@ -567,17 +631,29 @@ func main() {
 		case "/konfigurasi-api-key", "konfigurasi-api-key", "/konfigurasi", "konfigurasi", "/config", "config", "/masukan-api-key", "masukan-api-key", "/api-key", "api-key", "/apikey", "apikey":
 			handleKonfigurasiAPIKey(cfg, engine, func(p string) (string, error) {
 				return ui.ReadInput(p)
-			}, func(s string) { fmt.Println(s) })
+			}, func(s string) { fmt.Println(s) }, nil)
+			continue
+		case "/konfigurasi-model-lokal", "konfigurasi-model-lokal", "/model-lokal", "model-lokal", "/lokal", "lokal":
+			handleKonfigurasiModelLokal(cfg, engine, func(p string) (string, error) {
+				return ui.ReadInput(p)
+			}, func(s string) { fmt.Println(s) }, nil)
 			continue
 		case "/pilih model", "pilih model", "/pilih-model", "pilih-model", "/model", "model":
 			handlePilihModel("", cfg, engine, func(p string) (string, error) {
 				return ui.ReadInput(p)
-			}, func(s string) { fmt.Println(s) })
+			}, func(s string) { fmt.Println(s) }, nil)
 			continue
 		case "/api-url", "api-url", "/url", "url":
 			handleAPIURL("", cfg, engine, func(p string) (string, error) {
 				return ui.ReadInput(p)
-			}, func(s string) { fmt.Println(s) })
+			}, func(s string) { fmt.Println(s) }, nil)
+			continue
+		case "/update", "update", "/perbarui", "perbarui", "/upgrade":
+			fmt.Print("\x1b[2J\x1b[H")
+			ui.PrintHeader(version)
+			handleUpdate("", func(p string) (string, error) {
+				return ui.ReadInput(p)
+			}, func(s string) { fmt.Println(s) }, nil, workDir)
 			continue
 		}
 		if strings.HasPrefix(line, "/") {
@@ -592,7 +668,13 @@ func main() {
 			if strings.HasPrefix(low, "/konfigurasi-api-key") || strings.HasPrefix(low, "/masukan-api-key") || strings.HasPrefix(low, "/konfigurasi") {
 				handleKonfigurasiAPIKey(cfg, engine, func(p string) (string, error) {
 					return ui.ReadInput(p)
-				}, func(s string) { fmt.Println(s) })
+				}, func(s string) { fmt.Println(s) }, nil)
+				continue
+			}
+			if strings.HasPrefix(low, "/konfigurasi-model-lokal") || strings.HasPrefix(low, "/model-lokal") || strings.HasPrefix(low, "/lokal") {
+				handleKonfigurasiModelLokal(cfg, engine, func(p string) (string, error) {
+					return ui.ReadInput(p)
+				}, func(s string) { fmt.Println(s) }, nil)
 				continue
 			}
 			if strings.HasPrefix(low, "/pilih model ") || strings.HasPrefix(low, "/pilih-model ") || strings.HasPrefix(low, "/model ") {
@@ -605,7 +687,7 @@ func main() {
 				}
 				handlePilihModel(arg, cfg, engine, func(p string) (string, error) {
 					return ui.ReadInput(p)
-				}, func(s string) { fmt.Println(s) })
+				}, func(s string) { fmt.Println(s) }, nil)
 				continue
 			}
 			if strings.HasPrefix(low, "/api-url ") || strings.HasPrefix(low, "/url ") {
@@ -616,7 +698,7 @@ func main() {
 				}
 				handleAPIURL(arg, cfg, engine, func(p string) (string, error) {
 					return ui.ReadInput(p)
-				}, func(s string) { fmt.Println(s) })
+				}, func(s string) { fmt.Println(s) }, nil)
 				continue
 			}
 			ui.Warn("Perintah tidak dikenali: " + line + " — ketik /bantuan untuk daftar perintah.")
@@ -661,10 +743,11 @@ func main() {
 			}
 			fmt.Print(ui.Dim(s))
 		}
+		warnaiDelta := ui.NewDeltaColorizer()
 		err = ag.RunChat(line, agent.ChatUI{
 			OnDelta: func(d string) {
 				closeReason()
-				fmt.Print(d)
+				fmt.Print(warnaiDelta(d))
 			},
 			OnReasoning: func(r string) bool {
 				if !reasonOn.Load() {
@@ -788,72 +871,120 @@ func fetchAvailableModels(cfg *config.Config) ([]string, error) {
 	return found, nil
 }
 
-func handleKonfigurasiAPIKey(cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string)) {
-	appendMsg(ui.Bold(ui.Cyan("KONFIGURASI ENGINE AI (URL, API KEY, & MODEL)")))
-	appendMsg(ui.Dim("  Tekan Enter pada langkah mana pun untuk tetap memakai nilai saat ini (/batal untuk keluar)."))
+// pickFn adalah fungsi picker interaktif (mode TUI: ReadPickerTUI dengan
+// anak panah warna + mouse); nil pada mode CLI polos → fallback bernomor.
+type pickFn func(title string, items []ui.PickerItem) (string, bool)
+
+// chooseAtauManual menampilkan pilihan lewat picker interaktif (TUI) atau
+// daftar bernomor (CLI polos). Pilihan terakhir selalu "✎ ketik manual".
+// Mengembalikan (nilai, true) bila ada pilihan; ("", false) bila batal.
+func chooseAtauManual(pick pickFn, readInput func(string) (string, error), appendMsg func(string),
+	title string, items []ui.PickerItem, manualLabel, manualPrompt string) (string, bool) {
+
+	manual := ui.PickerItem{Label: "✎ " + manualLabel, Desc: "ketik sendiri"}
+	if pick != nil {
+		all := append(append([]ui.PickerItem(nil), items...), manual)
+		val, ok := pick(title, all)
+		if !ok {
+			return "", false
+		}
+		if val == manual.Label { // item manual dipilih
+			in, err := readInput(manualPrompt)
+			if err != nil {
+				return "", false
+			}
+			in = strings.TrimSpace(in)
+			if in == "" || strings.EqualFold(in, "/batal") || strings.EqualFold(in, "batal") {
+				return "", false
+			}
+			return in, true
+		}
+		return val, true
+	}
+
+	// Mode CLI polos: daftar bernomor + ketik manual.
+	appendMsg(ui.Bold(title))
+	for i, it := range items {
+		appendMsg(fmt.Sprintf("    [%d] %-14s %s", i+1, it.Label, ui.Dim(it.Desc)))
+	}
+	appendMsg(fmt.Sprintf("  Pilih nomor [1-%d], atau ketik %s (atau /batal):", len(items), manualLabel))
+	in, err := readInput("PILIH ❯")
+	if err != nil {
+		return "", false
+	}
+	in = strings.TrimSpace(in)
+	if in == "" || strings.EqualFold(in, "/batal") || strings.EqualFold(in, "batal") {
+		return "", false
+	}
+	if num, perr := strconv.Atoi(in); perr == nil && num >= 1 && num <= len(items) {
+		return items[num-1].Label, true
+	}
+	return in, true // teks bebas = nilai manual
+}
+
+func handleKonfigurasiAPIKey(cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string), pick pickFn) {
+	appendMsg(ui.Bold(ui.Cyan("┌─ KONFIGURASI ENGINE AI — 3 LANGKAH")))
+	appendMsg(ui.Dim("  Alur: ❶ provider & URL → ❷ API key → ❸ model. Pilih lewat picker"))
+	appendMsg(ui.Dim("  (↑↓ atau mouse) atau ketik manual; /batal menghentikan kapan saja."))
 	appendMsg("")
 
-	// [1/3] API URL
-	appendMsg(ui.Bold("[1/3] API URL ENGINE"))
-	appendMsg("  URL aktif : " + ui.Dim(cfg.APIURL))
-	appendMsg("  Preset    : [1] ollama [2] vllm [3] groq [4] openai [5] openrouter [6] gemini [7] nvidia")
-	appendMsg("  Masukkan nomor preset / URL baru (Enter = tetap):")
-	inURL, err := readInput("URL ❯")
-	if err != nil {
+	// ❶ PROVIDER & URL — picker berwarna (TUI) / daftar bernomor (CLI).
+	presetItems := make([]ui.PickerItem, 0, len(config.ProviderPresets)+1)
+	for _, p := range config.ProviderPresets {
+		desc := p.URL
+		if strings.TrimRight(cfg.APIURL, "/") == strings.TrimRight(p.URL, "/") {
+			desc = p.URL + "  " + ui.Green("← aktif")
+		}
+		presetItems = append(presetItems, ui.PickerItem{Label: p.Name, Desc: desc})
+	}
+	presetItems = append(presetItems, ui.PickerItem{Label: "⏭ Lewati", Desc: "pakai URL aktif: " + cfg.APIURL})
+	val, ok := chooseAtauManual(pick, readInput, appendMsg,
+		"❶ PILIH PROVIDER / URL ENGINE", presetItems,
+		"URL lengkap lain (mis. http://192.168.1.5:11434/v1)", "URL ❯")
+	if !ok {
+		appendMsg(ui.Dim("  Konfigurasi dibatalkan — nilai lama tetap dipakai."))
 		return
 	}
-	inURL = strings.TrimSpace(inURL)
-	if strings.EqualFold(inURL, "/batal") || strings.EqualFold(inURL, "batal") {
-		appendMsg(ui.Dim("  Konfigurasi dibatalkan."))
-		return
-	}
-
 	newURL := cfg.APIURL
-	if inURL != "" {
-		if num, perr := strconv.Atoi(inURL); perr == nil && num >= 1 && num <= len(config.ProviderPresets) {
-			newURL = config.ProviderPresets[num-1].URL
-			cfg.Provider = config.ProviderPresets[num-1].Name
+	if val != cfg.APIURL {
+		if p := cariPreset(val); p.Name != "" {
+			newURL = p.URL
+			cfg.Provider = p.Name
 		} else {
-			matched := false
-			for _, p := range config.ProviderPresets {
-				if strings.EqualFold(inURL, p.Name) {
-					newURL = p.URL
-					cfg.Provider = p.Name
-					matched = true
-					break
-				}
+			newURL = val
+			if !strings.HasPrefix(newURL, "http://") && !strings.HasPrefix(newURL, "https://") {
+				newURL = "http://" + newURL
 			}
-			if !matched {
-				newURL = inURL
-				if !strings.HasPrefix(newURL, "http://") && !strings.HasPrefix(newURL, "https://") {
-					newURL = "http://" + newURL
-				}
-			}
+			cfg.Provider = ""
 		}
 	}
-	appendMsg(ui.Dim("  → URL dipilih: " + newURL))
+	appendMsg("  ❶ URL  → " + ui.Cyan(newURL))
 	appendMsg("")
 
-	// [2/3] API KEY
-	appendMsg(ui.Bold("[2/3] API KEY (BEARER TOKEN)"))
+	// ❷ API KEY — teks biasa; kunci selalu disamarkan saat ditampilkan.
+	appendMsg(ui.Bold("❷ API KEY (BEARER TOKEN)"))
 	masked := cfg.APIKey
 	if masked == "" {
 		masked = "(kosong)"
 	} else if len(masked) > 8 {
 		masked = masked[:4] + "..." + masked[len(masked)-4:]
 	}
-	appendMsg("  Kunci aktif: " + ui.Dim(masked))
-	appendMsg("  Masukkan API Key baru (Enter = tetap):")
+	appendMsg("  Kunci aktif : " + ui.Dim(masked))
+	if cfg.Provider == "ollama" || cfg.Provider == "vllm" {
+		appendMsg(ui.Dim("  Engine LOKAL biasanya TANPA kunci — tekan Enter untuk melewati."))
+	} else {
+		appendMsg(ui.Dim("  Tempel kunci dari provider (Groq: gsk_… · OpenAI: sk-… · OpenRouter: sk-or-v1-… · NVIDIA: nvapi-…)."))
+	}
+	appendMsg("  Ketik / b paste kunci (Enter = tetap pakai yang lama):")
 	inKey, err := readInput("API KEY ❯")
 	if err != nil {
 		return
 	}
 	inKey = strings.TrimSpace(inKey)
 	if strings.EqualFold(inKey, "/batal") || strings.EqualFold(inKey, "batal") {
-		appendMsg(ui.Dim("  Konfigurasi dibatalkan."))
+		appendMsg(ui.Dim("  Konfigurasi dibatalkan — nilai lama tetap dipakai."))
 		return
 	}
-
 	newKey := cfg.APIKey
 	if inKey != "" {
 		newKey = strings.Trim(inKey, `"'`)
@@ -862,53 +993,63 @@ func handleKonfigurasiAPIKey(cfg *config.Config, engine *llm.Client, readInput f
 	if len(newMasked) > 8 {
 		newMasked = newMasked[:4] + "..." + newMasked[len(newMasked)-4:]
 	}
-	appendMsg(ui.Dim("  → API Key dipilih: " + newMasked))
+	appendMsg("  ❷ KUNCI → " + ui.Dim(newMasked))
 	appendMsg("")
 
-	// [3/3] MODEL
-	appendMsg(ui.Bold("[3/3] MODEL AI (KARTIKA_MODEL)"))
-	appendMsg("  Model aktif: " + ui.Dim(cfg.Model))
-
+	// ❸ MODEL — daftar model ditarik dari engine lalu dipilih via picker.
+	appendMsg(ui.Bold("❸ MODEL AI"))
+	appendMsg("  Menghubungi engine " + ui.Cyan(newURL) + ui.Dim(" …"))
 	tempCfg := &config.Config{APIURL: newURL, APIKey: newKey}
 	models, _ := fetchAvailableModels(tempCfg)
-	if len(models) > 0 {
-		appendMsg("  Model terdeteksi di engine:")
-		maxShow := 8
-		for i, m := range models {
-			if i >= maxShow {
-				appendMsg(fmt.Sprintf("    ... dan %d model lainnya", len(models)-maxShow))
-				break
-			}
-			mark := ""
-			if m == cfg.Model {
-				mark = ui.Bold(ui.Green(" (aktif)"))
-			}
-			appendMsg(fmt.Sprintf("    [%d] %s%s", i+1, m, mark))
-		}
-		appendMsg(fmt.Sprintf("  Pilih nomor [1-%d] atau ketik nama model baru (Enter = tetap):", len(models)))
-	} else {
-		appendMsg("  Masukkan nama model baru (Enter = tetap):")
-	}
-
-	inModel, err := readInput("MODEL ❯")
-	if err != nil {
-		return
-	}
-	inModel = strings.TrimSpace(inModel)
-	if strings.EqualFold(inModel, "/batal") || strings.EqualFold(inModel, "batal") {
-		appendMsg(ui.Dim("  Konfigurasi dibatalkan."))
-		return
-	}
-
 	newModel := cfg.Model
-	if inModel != "" {
-		if num, perr := strconv.Atoi(inModel); perr == nil && num >= 1 && num <= len(models) {
-			newModel = models[num-1]
-		} else {
+	if len(models) > 0 {
+		modelItems := make([]ui.PickerItem, 0, len(models))
+		for _, m := range models {
+			desc := ""
+			if m == cfg.Model {
+				desc = ui.Green("← aktif")
+			}
+			modelItems = append(modelItems, ui.PickerItem{Label: m, Desc: desc})
+		}
+		val, ok := chooseAtauManual(pick, readInput, appendMsg,
+			"❸ PILIH MODEL ("+fmt.Sprint(len(models))+" terdeteksi)", modelItems,
+			"nama model lain (mis. llama3.3:70b)", "MODEL ❯")
+		if !ok {
+			appendMsg(ui.Dim("  Konfigurasi dibatalkan — nilai lama tetap dipakai."))
+			return
+		}
+		newModel = strings.Trim(val, `"'`)
+	} else {
+		appendMsg(ui.Yellow("! Daftar model tidak dapat ditarik (engine mati / endpoint tidak standar)."))
+		appendMsg("  Ketik nama model (Enter = tetap " + cfg.Model + "):")
+		inModel, rerr := readInput("MODEL ❯")
+		if rerr != nil {
+			return
+		}
+		inModel = strings.TrimSpace(inModel)
+		if strings.EqualFold(inModel, "/batal") || strings.EqualFold(inModel, "batal") {
+			appendMsg(ui.Dim("  Konfigurasi dibatalkan — nilai lama tetap dipakai."))
+			return
+		}
+		if inModel != "" {
 			newModel = strings.Trim(inModel, `"'`)
 		}
 	}
-	appendMsg(ui.Dim("  → Model dipilih: " + newModel))
+	newURL = strings.TrimRight(newURL, "/")
+	if len(models) > 0 {
+		found := false
+		for _, m := range models {
+			if strings.EqualFold(m, newModel) {
+				newModel = m
+				found = true
+				break
+			}
+		}
+		if !found {
+			appendMsg(ui.Yellow("! Model '" + newModel + "' tidak terdeteksi di daftar engine — tetap disimpan."))
+		}
+	}
+	appendMsg("  ❸ MODEL → " + ui.Cyan(newModel))
 	appendMsg("")
 
 	cfg.APIURL = newURL
@@ -924,52 +1065,148 @@ func handleKonfigurasiAPIKey(cfg *config.Config, engine *llm.Client, readInput f
 	_ = config.SaveEnvVar("KARTIKA_MODEL", newModel)
 	ui.SetLocalMode(cfg.IsLocal())
 
-	ok := checkEngine(cfg)
-	appendMsg(ui.Green("✓ Konfigurasi berhasil disimpan ke ~/.config/kartika/.env!"))
+	ok2 := checkEngine(cfg)
+	appendMsg(ui.Green("✓ Konfigurasi tersimpan ke ~/.config/kartika/.env"))
 	appendMsg("  URL   : " + ui.Cyan(newURL))
 	appendMsg("  Key   : " + ui.Dim(newMasked))
 	appendMsg("  Model : " + ui.Cyan(newModel))
-	if ok {
-		appendMsg(ui.Green("✓ Status engine: ONLINE — siap digunakan."))
+	if ok2 {
+		appendMsg(ui.Green("✓ Engine: " + ui.Bold("ONLINE") + " — siap digunakan."))
 	} else {
-		appendMsg(ui.Yellow("! Status engine: BELUM TERHUBUNG — periksa apakah URL, Key, dan Model sudah tepat."))
+		appendMsg(ui.Yellow("! Engine: BELUM TERHUBUNG — periksa URL, kunci, dan nama model."))
 	}
 }
 
-func handlePilihModel(arg string, cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string)) {
+// handleKonfigurasiModelLokal — wizard khusus engine LOKAL: pilih server
+// (Ollama / vLLM / LM Studio / llama.cpp / URL lain), tarik daftar model,
+// pilih model, simpan TANPA API key, lalu tes koneksi.
+func handleKonfigurasiModelLokal(cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string), pick pickFn) {
+	appendMsg(ui.Bold(ui.Cyan("┌─ KONFIGURASI MODEL LOKAL")))
+	appendMsg(ui.Dim("  Engine lokal berjalan di laptop Anda sendiri — TANPA API key,"))
+	appendMsg(ui.Dim("  cocok untuk udara-tertutup (air-gapped). /batal menghentikan kapan saja."))
+	appendMsg("")
+	lokItems := []ui.PickerItem{
+		{Label: "http://localhost:11434/v1", Desc: "Ollama   (port 11434)"},
+		{Label: "http://localhost:8000/v1", Desc: "vLLM     (port 8000)"},
+		{Label: "http://localhost:1234/v1", Desc: "LM Studio (port 1234)"},
+		{Label: "http://localhost:8080/v1", Desc: "llama.cpp server (port 8080)"},
+	}
+	val, ok := chooseAtauManual(pick, readInput, appendMsg,
+		"PILIH SERVER LOKAL", lokItems,
+		"URL server lain (mis. http://192.168.1.5:11434/v1)", "URL ❯")
+	if !ok {
+		appendMsg(ui.Dim("  Konfigurasi model lokal dibatalkan."))
+		return
+	}
+	newURL := strings.TrimRight(val, "/")
+	appendMsg("  Server → " + ui.Cyan(newURL))
+	cfg.Provider = "lokal"
+
+	// Tarik daftar model dari server lokal.
+	appendMsg("  Mengambil daftar model …")
+	tempCfg := &config.Config{APIURL: newURL}
+	models, _ := fetchAvailableModels(tempCfg)
+	newModel := ""
+	if len(models) > 0 {
+		items := make([]ui.PickerItem, 0, len(models))
+		for _, m := range models {
+			desc := ""
+			if m == cfg.Model {
+				desc = ui.Green("← aktif")
+			}
+			items = append(items, ui.PickerItem{Label: m, Desc: desc})
+		}
+		val, ok := chooseAtauManual(pick, readInput, appendMsg,
+			"PILIH MODEL LOKAL ("+fmt.Sprint(len(models))+" terdeteksi)", items,
+			"nama model manual", "MODEL ❯")
+		if !ok {
+			appendMsg(ui.Dim("  Konfigurasi model lokal dibatalkan."))
+			return
+		}
+		newModel = strings.Trim(val, `"'`)
+	} else {
+		appendMsg(ui.Yellow("! Server tidak menjawab atau belum menjalankan model — pastikan"))
+		appendMsg(ui.Dim("  Ollama/vLLM/LM Studio sedang berjalan, lalu ketik nama modelnya."))
+		appendMsg("  Ketik nama model (atau /batal):")
+		inModel, rerr := readInput("MODEL ❯")
+		if rerr != nil {
+			return
+		}
+		inModel = strings.TrimSpace(inModel)
+		if inModel == "" || strings.EqualFold(inModel, "/batal") || strings.EqualFold(inModel, "batal") {
+			appendMsg(ui.Dim("  Konfigurasi model lokal dibatalkan."))
+			return
+		}
+		newModel = strings.Trim(inModel, `"'`)
+	}
+	if newModel == "" {
+		appendMsg(ui.Yellow("  Nama model tidak boleh kosong."))
+		return
+	}
+
+	cfg.APIURL = newURL
+	cfg.APIKey = "" // lokal: tanpa kunci
+	cfg.Model = newModel
+	if engine != nil {
+		engine.URL = newURL
+		engine.APIKey = ""
+		engine.Model = newModel
+	}
+	_ = config.SaveEnvVar("KARTIKA_API_URL", newURL)
+	_ = config.SaveEnvVar("KARTIKA_API_KEY", "")
+	_ = config.SaveEnvVar("KARTIKA_MODEL", newModel)
+	ui.SetLocalMode(cfg.IsLocal())
+
+	ok3 := checkEngine(cfg)
+	appendMsg(ui.Green("✓ Konfigurasi lokal tersimpan ke ~/.config/kartika/.env"))
+	appendMsg("  Server : " + ui.Cyan(newURL))
+	appendMsg("  Model  : " + ui.Cyan(newModel))
+	appendMsg("  API key: " + ui.Dim("(kosong — engine lokal)"))
+	if ok3 {
+		appendMsg(ui.Green("✓ Engine lokal: " + ui.Bold("ONLINE") + " — siap digunakan tanpa internet."))
+	} else {
+		appendMsg(ui.Yellow("! Engine lokal belum terhubung — cek apakah server berjalan (mis. 'ollama serve')."))
+	}
+}
+
+// cariPreset mencari preset provider dari nama atau URL.
+func cariPreset(v string) config.ProviderURL {
+	for _, p := range config.ProviderPresets {
+		if strings.EqualFold(v, p.Name) || strings.TrimRight(v, "/") == strings.TrimRight(p.URL, "/") {
+			return p
+		}
+	}
+	return config.ProviderURL{}
+}
+
+func handlePilihModel(arg string, cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string), pick pickFn) {
 	chosen := strings.TrimSpace(arg)
+	var models []string
 	if chosen == "" {
 		appendMsg(ui.Bold(ui.Cyan("PILIH MODEL AI (KARTIKA_MODEL)")))
 		appendMsg(ui.Dim("  Model saat ini: " + cfg.Model))
 		appendMsg(ui.Dim("  Menghubungi engine di " + cfg.APIURL + "..."))
 
-		models, err := fetchAvailableModels(cfg)
-		if err == nil && len(models) > 0 {
-			appendMsg("  Model yang tersedia:")
-			for i, m := range models {
-				mark := ""
+		models, _ = fetchAvailableModels(cfg)
+		if len(models) > 0 {
+			items := make([]ui.PickerItem, 0, len(models))
+			for _, m := range models {
+				desc := ""
 				if m == cfg.Model {
-					mark = ui.Bold(ui.Green(" (aktif)"))
+					desc = ui.Green("← aktif")
 				}
-				appendMsg(fmt.Sprintf("    [%d] %s%s", i+1, m, mark))
+				items = append(items, ui.PickerItem{Label: m, Desc: desc})
 			}
-			appendMsg(fmt.Sprintf("  Pilih nomor [1-%d] atau ketik nama model baru (atau /batal):", len(models)))
-			in, rerr := readInput("MODEL ❯")
-			if rerr != nil {
-				return
-			}
-			in = strings.TrimSpace(in)
-			if in == "" || strings.ToLower(in) == "/batal" || strings.ToLower(in) == "batal" {
+			val, ok := chooseAtauManual(pick, readInput, appendMsg,
+				"PILIH MODEL ("+fmt.Sprint(len(models))+" terdeteksi)", items,
+				"nama model lain (mis. llama3.3:70b)", "MODEL ❯")
+			if !ok {
 				appendMsg(ui.Dim("  Pemilihan model dibatalkan."))
 				return
 			}
-			if num, perr := strconv.Atoi(in); perr == nil && num >= 1 && num <= len(models) {
-				chosen = models[num-1]
-			} else {
-				chosen = in
-			}
+			chosen = val
 		} else {
-			appendMsg(ui.Yellow("  Daftar model tidak dapat diambil otomatis dari engine."))
+			appendMsg(ui.Yellow("  Daftar model tidak dapat diambil dari engine (engine mati / endpoint tidak standar)."))
 			appendMsg("  Ketik nama model yang ingin digunakan (atau /batal):")
 			in, rerr := readInput("MODEL ❯")
 			if rerr != nil {
@@ -990,6 +1227,20 @@ func handlePilihModel(arg string, cfg *config.Config, engine *llm.Client, readIn
 		return
 	}
 
+	if len(models) > 0 {
+		found := false
+		for _, m := range models {
+			if strings.EqualFold(m, chosen) {
+				chosen = m
+				found = true
+				break
+			}
+		}
+		if !found {
+			appendMsg(ui.Yellow("! PERINGATAN: Model '" + chosen + "' tidak terdaftar di engine."))
+		}
+	}
+
 	cfg.Model = chosen
 	if engine != nil {
 		engine.Model = chosen
@@ -1006,45 +1257,29 @@ func handlePilihModel(arg string, cfg *config.Config, engine *llm.Client, readIn
 	}
 }
 
-func handleAPIURL(arg string, cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string)) {
+func handleAPIURL(arg string, cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string), pick pickFn) {
 	chosenURL := strings.TrimSpace(arg)
 	if chosenURL == "" {
-		appendMsg(ui.Bold(ui.Cyan("KONFIGURASI API URL ENGINE")))
-		appendMsg(ui.Dim("  URL aktif saat ini: " + cfg.APIURL))
-		appendMsg("  Preset provider yang tersedia:")
-		for i, p := range config.ProviderPresets {
-			mark := ""
+		items := make([]ui.PickerItem, 0, len(config.ProviderPresets))
+		for _, p := range config.ProviderPresets {
+			desc := p.URL
 			if strings.TrimRight(cfg.APIURL, "/") == strings.TrimRight(p.URL, "/") {
-				mark = ui.Bold(ui.Green(" (aktif)"))
+				desc += "  " + ui.Green("← aktif")
 			}
-			appendMsg(fmt.Sprintf("    [%d] %-10s -> %s%s", i+1, p.Name, p.URL, mark))
+			items = append(items, ui.PickerItem{Label: p.Name, Desc: desc})
 		}
-		appendMsg(fmt.Sprintf("  Pilih nomor preset [1-%d], nama provider, atau ketik URL lengkap (atau /batal):", len(config.ProviderPresets)))
-		in, err := readInput("API URL ❯")
-		if err != nil {
-			return
-		}
-		in = strings.TrimSpace(in)
-		if in == "" || strings.ToLower(in) == "/batal" || strings.ToLower(in) == "batal" {
+		val, ok := chooseAtauManual(pick, readInput, appendMsg,
+			"PILIH PROVIDER / URL ENGINE", items,
+			"URL lengkap (mis. https://api.groq.com/openai/v1)", "API URL ❯")
+		if !ok {
 			appendMsg(ui.Dim("  Pengaturan API URL dibatalkan."))
 			return
 		}
-		if num, perr := strconv.Atoi(in); perr == nil && num >= 1 && num <= len(config.ProviderPresets) {
-			chosenURL = config.ProviderPresets[num-1].URL
-			cfg.Provider = config.ProviderPresets[num-1].Name
+		if p := cariPreset(val); p.Name != "" {
+			chosenURL = p.URL
+			cfg.Provider = p.Name
 		} else {
-			matched := false
-			for _, p := range config.ProviderPresets {
-				if strings.EqualFold(in, p.Name) {
-					chosenURL = p.URL
-					cfg.Provider = p.Name
-					matched = true
-					break
-				}
-			}
-			if !matched {
-				chosenURL = in
-			}
+			chosenURL = val
 		}
 	}
 
@@ -1074,6 +1309,244 @@ func handleAPIURL(arg string, cfg *config.Config, engine *llm.Client, readInput 
 	}
 }
 
+// handleUpdate — perintah /update: cek rilis terbaru di repo GitHub,
+// tampilkan perbandingan versi, lalu tawarkan tiga jalur pemasangan:
+// pasang binary rilis (unduh + verifikasi SHA-256), build ulang dari
+// source di mesin ini, atau sekadar buka halaman rilis.
+func handleUpdate(arg string, readInput func(string) (string, error), appendMsg func(string), pick pickFn, srcDir string) {
+	arg = strings.ToLower(strings.TrimSpace(arg))
+	appendMsg(ui.Bold(ui.Cyan("┌─ PEMBARUAN KARTIKA-AGENT")))
+	appendMsg(ui.Dim("  Repo     : " + update.Repo()))
+	appendMsg(ui.Dim("  Platform : " + update.AssetName()))
+	appendMsg(ui.Dim("  Terpasang: v" + version))
+	appendMsg("")
+	appendMsg("  Memeriksa rilis terbaru …")
+
+	rel, err := update.Latest(8 * time.Second)
+	if err != nil {
+		appendMsg(ui.Red("✗ Gagal memeriksa rilis: " + err.Error()))
+		appendMsg(ui.Dim("  Periksa koneksi internet, atau buka manual: " + update.PageURL()))
+		return
+	}
+	appendMsg("  Terbaru  : " + ui.Cyan(rel.Tag))
+	if rel.URL != "" {
+		appendMsg(ui.Dim("  Halaman  : " + rel.URL))
+	}
+	if !update.Newer(version, rel.Tag) {
+		appendMsg(ui.Green("✓ Sudah versi terbaru — tidak ada yang perlu dipasang."))
+		if notes := update.NotesRingkas(rel.Notes, 8); notes != "" {
+			appendMsg("")
+			appendMsg(ui.Dim("  Catatan rilis:"))
+			for _, l := range strings.Split(notes, "\n") {
+				appendMsg(ui.Dim("    " + l))
+			}
+		}
+		appendMsg("")
+		return
+	}
+	appendMsg(ui.Yellow("↑ Tersedia pembaruan: v" + version + " → " + rel.Tag))
+	if notes := update.NotesRingkas(rel.Notes, 10); notes != "" {
+		appendMsg("")
+		appendMsg(ui.Dim("  Catatan rilis:"))
+		for _, l := range strings.Split(notes, "\n") {
+			appendMsg(ui.Dim("    " + l))
+		}
+	}
+	appendMsg("")
+
+	asset, hasAsset := rel.FindAsset()
+	opsi := make([]ui.PickerItem, 0, 3)
+	if hasAsset {
+		opsi = append(opsi, ui.PickerItem{
+			Label: "⬇ Pasang binary rilis",
+			Desc:  asset.Name + " · " + update.HumanSize(asset.Size),
+		})
+	} else {
+		appendMsg(ui.Yellow("! Aset untuk platform ini tidak ada di rilis (" + update.AssetName() + ")."))
+	}
+	opsi = append(opsi, ui.PickerItem{Label: "🔨 Build ulang dari source", Desc: "butuh toolchain Go di mesin ini"})
+	opsi = append(opsi, ui.PickerItem{Label: "🌐 Buka halaman rilis", Desc: update.PageURL()})
+
+	var pilihan string
+	if pick != nil {
+		val, ok := pick("CARA MEMBARUI", opsi)
+		if !ok {
+			appendMsg(ui.Dim("  Pembaruan dibatalkan."))
+			return
+		}
+		pilihan = val
+	} else {
+		appendMsg(ui.Bold("CARA MEMBARUI"))
+		for i, it := range opsi {
+			appendMsg(fmt.Sprintf("    [%d] %s %s", i+1, it.Label, ui.Dim(it.Desc)))
+		}
+		appendMsg(fmt.Sprintf("  Pilih nomor [1-%d] (atau /batal):", len(opsi)))
+		in, rerr := readInput("PILIH ❯")
+		if rerr != nil {
+			return
+		}
+		in = strings.TrimSpace(in)
+		n, cerr := strconv.Atoi(in)
+		if cerr != nil || n < 1 || n > len(opsi) {
+			appendMsg(ui.Dim("  Pembaruan dibatalkan."))
+			return
+		}
+		pilihan = opsi[n-1].Label
+	}
+
+	switch {
+	case strings.HasPrefix(pilihan, "⬇"):
+		pasangBinaryRilis(rel, asset, appendMsg)
+	case strings.HasPrefix(pilihan, "🔨"):
+		buildUlangSource(srcDir, rel.Tag, appendMsg)
+	default:
+		appendMsg("")
+		appendMsg("  Halaman rilis : " + update.PageURL())
+		appendMsg("  Unduhan aset  : " + rel.URL)
+		appendMsg(ui.Dim("  Pasang manual (Linux/macOS):"))
+		appendMsg(ui.Dim("    curl -fL -o kartika " + asset.URL + " && chmod +x kartika && sudo mv kartika /usr/local/bin/"))
+	}
+	appendMsg("")
+}
+
+// pasangBinaryRilis mengunduh aset rilis, memverifikasi SHA-256 dari digest
+// rilis, lalu mengganti binary yang sedang berjalan secara atomik.
+func pasangBinaryRilis(rel *update.Release, asset update.Asset, appendMsg func(string)) {
+	dst, err := update.CurrentExecutable()
+	if err != nil {
+		appendMsg(ui.Red("✗ Tidak dapat menentukan lokasi binary berjalan: " + err.Error()))
+		return
+	}
+	appendMsg("")
+	appendMsg("  Mengunduh " + asset.Name + " (" + update.HumanSize(asset.Size) + ") …")
+
+	tmpDir, err := os.MkdirTemp("", "kartika-update-")
+	if err != nil {
+		appendMsg(ui.Red("✗ Gagal membuat direktori sementara: " + err.Error()))
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+	tmpFile := filepath.Join(tmpDir, asset.Name)
+
+	n, err := update.Download(asset.URL, tmpFile, 300*time.Second)
+	if err != nil {
+		appendMsg(ui.Red("✗ Unduhan gagal: " + err.Error()))
+		return
+	}
+	appendMsg(ui.Green("✓ Terunduh: " + update.HumanSize(n)))
+
+	checked, verr := update.VerifySHA256(tmpFile, asset.Digest)
+	switch {
+	case verr != nil:
+		appendMsg(ui.Red("✗ Verifikasi SHA-256 GAGAL: " + verr.Error()))
+		appendMsg(ui.Dim("  Berkas tidak dipasang — unduhan mungkin rusak atau diubah di jalan."))
+		return
+	case !checked:
+		appendMsg(ui.Yellow("! Rilis tidak menyertakan checksum SHA-256 — verifikasi dilewati."))
+	default:
+		sum, _ := update.Sum256(tmpFile)
+		appendMsg(ui.Green("✓ SHA-256 cocok: " + sum))
+	}
+
+	installedTo, err := update.Install(tmpFile, dst)
+	if err != nil {
+		appendMsg(ui.Red("✗ Gagal memasang: " + err.Error()))
+		appendMsg(ui.Dim("  Saran: jalankan ulang dengan hak tulis, mis. 'sudo kartika' atau unduh manual dari " + rel.URL))
+		return
+	}
+	appendMsg("")
+	if filepath.Ext(installedTo) == ".new" || strings.HasSuffix(installedTo, ".new") {
+		appendMsg(ui.Yellow("! Windows: binary baru ditulis di " + installedTo))
+		appendMsg(ui.Dim("  Tutup kartika, lalu ganti binary lama dengan berkas tersebut agar berlaku."))
+		return
+	}
+	appendMsg(ui.Bold(ui.Green("✓ Terpasang: " + installedTo)))
+	appendMsg(ui.Dim("  Versi dilaporkan: " + rel.Tag))
+	appendMsg(ui.Dim("  Binary lama sudah digantikan — jalankan ulang 'kartika' untuk memakai versi baru."))
+	if !strings.Contains(os.Getenv("PATH"), filepath.Dir(installedTo)) {
+		appendMsg(ui.Yellow("! " + filepath.Dir(installedTo) + " belum ada di PATH — tambahkan agar perintah 'kartika' menunjuk versi baru."))
+	}
+}
+
+// buildUlangSource membangun binary dari kode sumber lokal (opsi build ulang)
+// lalu memasangnya menggantikan binary yang sedang berjalan.
+func buildUlangSource(srcDir, tag string, appendMsg func(string)) {
+	appendMsg("")
+	if !update.IsSourceDir(srcDir) {
+		appendMsg(ui.Red("✗ Direktori sumber tidak ditemukan (" + srcDir + ")."))
+		appendMsg(ui.Dim("  Jalankan /update dari dalam repo, atau pilih pasang binary rilis."))
+		return
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		appendMsg(ui.Red("✗ Toolchain Go tidak ditemukan di PATH."))
+		appendMsg(ui.Dim("  Pasang Go ≥ 1.21 (https://go.dev/dl), atau pilih pasang binary rilis."))
+		return
+	}
+	dst, err := update.CurrentExecutable()
+	if err != nil {
+		appendMsg(ui.Red("✗ Tidak dapat menentukan lokasi binary berjalan: " + err.Error()))
+		return
+	}
+
+	tmpDir, err := os.MkdirTemp("", "kartika-build-")
+	if err != nil {
+		appendMsg(ui.Red("✗ Gagal membuat direktori sementara: " + err.Error()))
+		return
+	}
+	defer os.RemoveAll(tmpDir)
+	out := filepath.Join(tmpDir, "kartika")
+
+	appendMsg("  Membangun dari source: " + srcDir)
+	ver := strings.TrimPrefix(tag, "v")
+	if err := update.BuildFromSource(srcDir, out, ver); err != nil {
+		appendMsg(ui.Red("✗ Build gagal:"))
+		for _, l := range strings.Split(err.Error(), "\n") {
+			appendMsg(ui.Dim("    " + l))
+		}
+		return
+	}
+	appendMsg(ui.Green("✓ Build selesai: " + out))
+
+	installedTo, err := update.Install(out, dst)
+	if err != nil {
+		appendMsg(ui.Red("✗ Gagal memasang hasil build: " + err.Error()))
+		appendMsg(ui.Dim("  Saran: jalankan 'bash build.sh' lalu 'bash install.sh' dengan hak yang cukup."))
+		return
+	}
+	appendMsg("")
+	appendMsg(ui.Bold(ui.Green("✓ Terpasang: " + installedTo)))
+	appendMsg(ui.Dim("  Jalankan ulang 'kartika' untuk memakai binary hasil build."))
+}
+
+// updateBanner mengembalikan satu baris pemberitahuan bila ada rilis lebih
+// baru (dicek di latar belakang, cache 6 jam, tidak pernah menggagalkan
+// startup). Mengembalikan "" bila tidak ada pembaruan / pemeriksaan mati.
+func updateBanner() string {
+	if !update.Enabled() {
+		return ""
+	}
+	type hasil struct {
+		rel *update.Release
+		err error
+	}
+	ch := make(chan hasil, 1)
+	go func() {
+		rel, err := update.LatestCached()
+		ch <- hasil{rel, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil || r.rel == nil || !update.Newer(version, r.rel.Tag) {
+			return ""
+		}
+		msg := ui.Yellow("↑ Versi baru tersedia: v" + version + " → " + r.rel.Tag)
+		msg += ui.Dim("  · ketik /update untuk memasang")
+		return msg
+	case <-time.After(2 * time.Second):
+		return "" // jangan pernah menahan startup demi cek versi
+	}
+}
+
 // reportFailure menerjemahkan kegagalan chat menjadi pesan operator yang
 // berguna: kegagalan konfigurasi menampilkan panduan letak API/model
 // (sekali per sesi), bukan error jaringan mentah.
@@ -1083,9 +1556,11 @@ func reportFailure(err error, cfg *config.Config, showConfig func(string)) {
 	case strings.Contains(msg, "koneksi ke engine gagal"):
 		showConfig("API atau model belum dikonfigurasi — engine tidak dapat dihubungi.")
 	case strings.Contains(msg, "HTTP 401"), strings.Contains(msg, "HTTP 403"):
-		showConfig("Kunci API ditolak — KARTIKA_API_KEY belum diisi atau salah.")
+		showConfig("Kunci API ditolak — KARTIKA_API_KEY belum diisi atau salah. Ketik /konfigurasi-api-key.")
 	case strings.Contains(msg, "HTTP 404"):
-		showConfig("Model tidak ditemukan pada endpoint — periksa KARTIKA_MODEL.")
+		showConfig("Model '" + cfg.Model + "' tidak ditemukan pada endpoint (" + cfg.APIURL + ") — ketik /pilih model untuk memilih dari daftar model yang tersedia.")
+	case strings.Contains(msg, "HTTP 400"):
+		showConfig("Engine menolak permintaan (HTTP 400). Model '" + cfg.Model + "' mungkin tidak valid — ketik /pilih model.")
 	default:
 		ui.Fail("CHAT GAGAL: " + msg)
 	}
@@ -1264,7 +1739,7 @@ func printSkillDoc(name string) {
 		return
 	}
 	ui.Info("")
-	ui.Info(ui.Bold(ui.Cyan("SKILL: " + s.Name)) + " " + ui.Dim("("+s.Path+")"))
+	ui.Info(ui.Bold(ui.Cyan("SKILL: "+s.Name)) + " " + ui.Dim("("+s.Path+")"))
 	ui.Info("")
 	ui.Info(doc)
 	ui.Info("")

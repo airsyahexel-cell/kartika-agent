@@ -142,6 +142,8 @@ REKOMENDASI MITIGASI:
 
 ## 4. Instalasi
 
+> **Repo rilis:** [`airsyahexel-cell/kartika-agent`](https://github.com/airsyahexel-cell/kartika-agent) — aset binary ada di halaman [Releases](https://github.com/airsyahexel-cell/kartika-agent/releases). Sudah terpasang? Cukup ketik **`/update`** di dalam kartika untuk memeriksa & memasang versi terbaru (lihat [Pembaruan Mandiri](#pembaruan-mandiri--update)). Repo lain: set `KARTIKA_REPO=org/repo`.
+
 ### Opsi A — Installer Lokal (binary dist/, cukup ketik `kartika`)
 
 Cara tercepat bila Anda mempunyai folder proyek ini (atau hasil `build.sh`):
@@ -251,6 +253,8 @@ export KARTIKA_MODEL=llama-3.3-70b-versatile
 | `KARTIKA_TIMEOUT` | `180` | Timeout koneksi ke engine (detik) |
 | `KARTIKA_MCP_CONFIG` | `mcp.json` | Path file konfigurasi MCP |
 | `KARTIKA_WRITE_SCOPE` | `.` | Cakupan direktori untuk modul `write_file` |
+| `KARTIKA_REPO` | `airsyahexel-cell/kartika-agent` | Repo GitHub sasaran `/update` (cek rilis & unduh aset) |
+| `KARTIKA_NO_UPDATE_CHECK` | *(kosong)* | `1` = matikan banner cek versi saat startup (CI / air-gapped) |
 
 ### Urutan Prioritas Konfigurasi
 
@@ -283,8 +287,42 @@ Pengalaman obrolan penuh di terminal: **kotak input berbingkai rounded**, jawaba
 | `/modul` | Daftar seluruh modul taktis (built-in + MCP) |
 | `/mcp` | Status MCP server & lokasi konfigurasi mcp.json |
 | `/pikir` | Tampilkan/sembunyikan alur berpikir model (reasoning) |
-| `ctrl+t` / `alt+1..9` | Tab sesi baru / pindah tab (layar penuh) |
+| `/konfigurasi-api-key` | Wizard 3 langkah (provider & URL → API key → model) — picker interaktif berwarna |
+| `/model` | Pilih/ganti model — daftar model ditarik dari engine, dipilih lewat picker (↑↓ berwarna, mouse hover/klik, wheel scroll) |
+| `/api-url` | Ganti URL provider — preset (Groq/OpenAI/OpenRouter/Gemini/NVIDIA/Ollama/vLLM) + ketik manual |
+| `/konfigurasi-model-lokal` | Wizard engine LOKAL tanpa API key: Ollama (11434), vLLM (8000), LM Studio (1234), llama.cpp (8080), atau URL lain — tarik daftar model, simpan, tes koneksi |
+| `/update` | Pembaruan mandiri: cek rilis terbaru repo, bandingkan versi, lalu **pasang binary rilis** (unduh + verifikasi SHA-256), **build ulang dari source**, atau buka halaman rilis |
+| `ctrl+t` / `alt+1..9` | Tab sesi baru / pindah tab (layar penuh) — juga bisa **klik mouse**: tab lama untuk berpindah, `[+tab]` untuk tab baru, ikon `×` di kanan header untuk menutup tab |
 | `kartika -s` / `--lanjut [id]` | Daftar sesi / buka ulang sesi tersimpan |
+
+### Pembaruan Mandiri — `/update`
+
+Kartika terhubung ke repo rilisnya sendiri, jadi pembaruan tidak perlu clone ulang:
+
+```text
+Repo     : airsyahexel-cell/kartika-agent      ← dari KARTIKA_REPO (bisa diganti)
+Platform : kartika-agent-linux-amd64
+Terpasang: v1.2.0
+Terbaru  : v1.3.0
+```
+
+| Langkah | Yang dilakukan |
+|---|---|
+| Cek rilis | `GET /repos/<repo>/releases/latest` — hasilnya di-cache 6 jam di `~/.config/kartika/update-check.json` |
+| Pasang binary rilis | Unduh aset sesuai platform → **verifikasi SHA-256** dari digest rilis → ganti binary berjalan secara atomik (`tulis .new` → `rename`) |
+| Build ulang dari source | Jalankan `go build -X main.version=<tag>` pada repo lokal, lalu pasang hasilnya (untuk yang memodifikasi kode) |
+| Buka halaman rilis | Menampilkan URL halaman + perintah `curl` untuk pemasangan manual |
+
+Detail perilaku:
+
+- Nama aset mengikuti konvensi `kartika-agent-<os>-<arch>[.exe]` — sama dengan keluaran `build.sh` dan workflow rilis.
+- Checksum diambil dari field `digest` rilis; bila rilis lama tidak menyertakannya, verifikasi dilewati dengan peringatan (tidak dipasang diam-diam tanpa kabar).
+- Bila direktori binary tidak dapat ditulis (mis. `/usr/local/bin` tanpa sudo), pemasangan jatuh ke `~/.local/bin` dan lokasi barunya diberitahukan.
+- Pada Windows binary yang sedang berjalan tidak bisa ditimpa: berkas baru ditulis sebagai `kartika.exe.new` untuk ditukar setelah keluar.
+- Saat startup kartika mengecek rilis di latar belakang (maks. 2 detik) dan menampilkan satu baris `↑ Versi baru tersedia: … · ketik /update untuk memasang`. Matikan dengan `KARTIKA_NO_UPDATE_CHECK=1` (berguna untuk CI / air-gapped).
+- Ganti repo sasaran dengan `KARTIKA_REPO=org/repo`.
+
+> Agar versi yang dilaporkan akurat, `build.sh` menanam versi dari `KARTIKA_VERSION` atau `git describe --tags`, dan workflow rilis menanam `-X main.version=<tag>`.
 
 ## 7. Pustaka Skill (metodologi bug bounty & red team)
 
@@ -441,11 +479,14 @@ GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/kartika-agent-darwin-
 
 # Semua sekaligus
 bash build.sh        # atau: make dist
+
+# Menanam versi tertentu (dipakai /update untuk membandingkan rilis)
+KARTIKA_VERSION=1.3.0 bash build.sh
 ```
 
 > **Catatan:** proyek ini multi-package (`internal/*`), sehingga target build adalah `.` (package root), bukan `main.go` tunggal.
 
-Setiap *push tag* `v*` memicu workflow `.github/workflows/release.yml` yang membangun ketiga binary dan mempublikasikannya ke **GitHub Releases** (LAPIS 2).
+Setiap *push tag* `v*` memicu workflow `.github/workflows/release.yml` yang membangun ketiga binary (versi ditanam lewat `-X main.version=<tag>`), menyertakan `SHA256SUMS`, dan mempublikasikannya ke **GitHub Releases** (LAPIS 2). Aset inilah yang dipakai `/update` saat memasang pembaruan.
 
 ---
 

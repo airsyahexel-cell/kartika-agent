@@ -740,13 +740,33 @@ type writeFileArgs struct {
 	Content string `json:"content"`
 }
 
+// sitrepDirFallback memilih folder laporan: bila folder "sitrep/" TIDAK ada
+// di direktori kerja (mis. agent dipasang di laptop lain), laporan diarahkan
+// ke folder "sitrep" di HOME user — /home/<user>/sitrep (Linux),
+// /Users/<user>/sitrep (macOS), %USERPROFILE%\sitrep (Windows).
+// Nilai balik "" berarti tanpa fallback (pakai cakupan kerja biasa).
+func sitrepDirFallback() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	if _, statErr := os.Stat("sitrep"); statErr != nil {
+		// tidak ada (atau tidak terbaca) di direktori kerja → fallback HOME
+		return filepath.Join(home, "sitrep")
+	}
+	return ""
+}
+
 func writeFileTool(scope string) *Tool {
 	return &Tool{
 		Name: "write_file",
 		Description: "Menulis file teks: laporan SITREP Markdown, file patch/rekomendasi konfigurasi hardening, atau catatan misi. " +
-			"Penulisan dibatasi di dalam cakupan direktori kerja (atur KARTIKA_WRITE_SCOPE untuk memperluas).",
+			"Penulisan dibatasi di dalam cakupan direktori kerja (atur KARTIKA_WRITE_SCOPE untuk memperluas). " +
+			"PATUNGAN KHUSUS: bila folder sitrep/ tidak ada di direktori kerja, path 'sitrep/...' OTOMATIS diarahkan ke " +
+			"folder sitrep di HOME user (mis. /home/user/sitrep; Windows %USERPROFILE%\\sitrep; macOS ~/sitrep) — " +
+			"hasil selalu mencantumkan path akhir yang benar.",
 		Schema: objSchema(map[string]any{
-			"path":    pStr("Path tujuan file, contoh: sitrep/sitrep-login-aspx.md"),
+			"path":    pStr("Path tujuan file, contoh: sitrep/sitrep-login-aspx.md (folder sitrep/ tidak ada → otomatis ke sitrep/ di HOME user)"),
 			"content": pStr("Konten lengkap yang akan ditulis (UTF-8 / Markdown)"),
 		}, []string{"path", "content"}),
 		Fn: func(raw json.RawMessage) string {
@@ -760,11 +780,27 @@ func writeFileTool(scope string) *Tool {
 			if a.Content == "" {
 				return "ERROR: parameter 'content' kosong — tulis konten laporan secara lengkap."
 			}
+			var target string
+			// Fallback folder laporan: sitrep/… di luar cakupan kerja bila
+			// folder sitrep/ tidak ada di sini → simpan ke HOME/sitrep.
+			if !filepath.IsAbs(a.Path) && strings.HasPrefix(filepath.ToSlash(filepath.Clean(a.Path)), "sitrep/") {
+				if fb := sitrepDirFallback(); fb != "" {
+					target = filepath.Join(fb, strings.TrimPrefix(filepath.ToSlash(filepath.Clean(a.Path)), "sitrep/"))
+					if dir := filepath.Dir(target); dir != "." {
+						if err := os.MkdirAll(dir, 0o755); err != nil {
+							return "ERROR: gagal membuat folder laporan di HOME: " + err.Error()
+						}
+					}
+					if err := os.WriteFile(target, []byte(a.Content), 0o644); err != nil {
+						return "ERROR: gagal menulis file laporan: " + err.Error()
+					}
+					return fmt.Sprintf("=== FILE DITULIS ===\nPath   : %s\nUkuran : %s\nStatus : OK\nCatatan: folder sitrep/ tidak ada di direktori kerja — laporan disimpan di folder sitrep HOME user.", target, humanSize(int64(len(a.Content))))
+				}
+			}
 			scopeAbs, err := filepath.Abs(scope)
 			if err != nil {
 				return "ERROR: cakupan kerja tidak valid: " + err.Error()
 			}
-			var target string
 			if filepath.IsAbs(a.Path) {
 				target = filepath.Clean(a.Path)
 			} else {

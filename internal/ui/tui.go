@@ -23,12 +23,15 @@ import (
 var altActive bool
 
 // EnterAlt membuka layar alternatif (seperti aplikasi TUI penuh).
+// Mode mouse (klik + hover + scroll sentuh) diaktifkan bersamaan.
 func EnterAlt() {
 	if !useColor || !IsTTY() {
 		return
 	}
 	altActive = true
 	fmt.Print("\x1b[?1049h\x1b[H\x1b[2J")
+	// 1000 = klik, 1003 = hover semua gerakan, 1006 = encoding SGR
+	fmt.Print("\x1b[?1000h\x1b[?1003h\x1b[?1006h")
 }
 
 // ExitAlt menutup layar alternatif dan mengembalikan konten lama.
@@ -38,6 +41,7 @@ func ExitAlt() {
 		return
 	}
 	altActive = false
+	fmt.Print("\x1b[?1006l\x1b[?1003l\x1b[?1000l") // matikan mouse
 	fmt.Print("\x1b[?1049l")
 }
 
@@ -187,33 +191,52 @@ type tabBuf struct {
 	status  string   // bar status tab ini
 	live    string   // pesan yang sedang mengalir (ekor transkrip)
 	liveDim bool
-	title   string   // label tab pada header (mis. id sesi)
+	title   string // label tab pada header (mis. id sesi)
 }
 
 // TUI adalah layar penuh posko: tab + transkrip + status + input + menu slash.
 type TUI struct {
-	mu      sync.Mutex
-	w, h    int
-	tabs    []*tabBuf
-	curIdx  int
-	thinkOn bool   // animasi "engine berpikir" pada bar status
+	mu         sync.Mutex
+	w, h       int
+	tabs       []*tabBuf
+	curIdx     int
+	thinkOn    bool // animasi "engine berpikir" pada bar status
 	thinkLabel string
 	thinkFrame int
-	thinkStop chan struct{}
-	liveInput string // teks yang diketik operator SAAT engine bekerja (live)
-	prefix  string
-	buf     []rune
-	menu    []SlashCommand
-	sel     int
+	thinkStop  chan struct{}
+	liveInput  string // teks yang diketik operator SAAT engine bekerja (live)
+	prefix     string
+	buf        []rune
+	menu       []SlashCommand
+	sel        int
 	lastRender time.Time
-	pend    bool
-	onTab   func(idx int) // dipanggil saat tab baru dibuat / tab dipindah
+	pend       bool
+	onTab      func(idx int) // dipanggil saat tab baru dibuat / tab dipindah
+	onClose    func(idx int) // dipanggil saat tab ditutup (sebelum onTab)
+
+	// peta zona klik header (dipusat saat build): area tab & tombol
+	headerZones  []hdrZone
+	menuBaseY    int // baris layar 1-based dari baris menu pertama
+	menuOff      int // jendela scroll menu slash / picker
+	menuWinStart int // index penuh baris menu pertama yang terlihat
+	menuWinRows  int // jumlah baris menu yang terlihat
 }
+
+// hdrZone adalah area klik di bar header: tab (pindah), add (+tab), close (×).
+type hdrZone struct {
+	start, end int  // kolom 1-based inklusif
+	kind       byte // 't' tab, 'a' add, 'c' close
+	tab        int  // index tab (untuk kind 't')
+}
+
+var activeTUI *TUI // referensi untuk KeyTap (mouse saat engine bekerja)
 
 // NewTUI membangun layar penuh (panggil setelah EnterAlt) dengan satu tab.
 func NewTUI() *TUI {
 	w, h := termSize()
-	return &TUI{w: w, h: h, tabs: []*tabBuf{{}}}
+	t := &TUI{w: w, h: h, tabs: []*tabBuf{{}}}
+	activeTUI = t
+	return t
 }
 
 // cur mengembalikan buffer tab aktif (panggil sambil memegang mutex).
@@ -256,6 +279,42 @@ func (t *TUI) SetTabHook(f func(idx int)) {
 	t.mu.Lock()
 	t.onTab = f
 	t.mu.Unlock()
+}
+
+// SetTabCloseHook memasang callback yang dipanggil saat tab ditutup
+// (argumen: index tab yang dihapus — sebelum perpindahan).
+func (t *TUI) SetTabCloseHook(f func(idx int)) {
+	t.mu.Lock()
+	t.onClose = f
+	t.mu.Unlock()
+}
+
+// CloseTab menutup tab i (0-based). Tab terakhir tidak boleh ditutup —
+// kembalikan false. Setelah ditutup, callback onClose(i) lalu onTab(idxBaru)
+// dipanggil agar status utama ikut menyinkronkan keadaannya.
+func (t *TUI) CloseTab(i int) bool {
+	t.mu.Lock()
+	if i < 0 || i >= len(t.tabs) || len(t.tabs) <= 1 {
+		t.mu.Unlock()
+		return false
+	}
+	t.tabs = append(t.tabs[:i], t.tabs[i+1:]...)
+	if t.curIdx >= len(t.tabs) {
+		t.curIdx = len(t.tabs) - 1
+	} else if t.curIdx > i {
+		t.curIdx--
+	}
+	idx := t.curIdx
+	fTab, fClose := t.onTab, t.onClose
+	t.mu.Unlock()
+	if fClose != nil {
+		fClose(i)
+	}
+	if fTab != nil {
+		fTab(idx)
+	}
+	t.doRender()
+	return true
 }
 
 // SetTabTitle mengganti label tab aktif pada header.
@@ -427,12 +486,42 @@ func (t *TUI) CommitLive() {
 // SetInput dipanggil editor input setiap perubahan buffer/menu.
 func (t *TUI) SetInput(prefix string, buf []rune, menu []SlashCommand, sel int) {
 	t.mu.Lock()
+	if !slicesEqual(menu, t.menu) { // menu baru → reset jendela scroll
+		t.menuOff = 0
+	}
 	t.prefix = prefix
 	t.buf = append([]rune(nil), buf...)
 	t.menu = menu
 	t.sel = sel
 	t.mu.Unlock()
 	t.doRender()
+}
+
+// ScrollMenu menggeser jendela menu slash/picker (delta ±1 per gerakan
+// wheel). Batas dijaga saat build.
+func (t *TUI) ScrollMenu(delta int) {
+	t.mu.Lock()
+	t.menuOff += delta
+	if t.menuOff < 0 {
+		t.menuOff = 0
+	}
+	if t.menuOff > len(t.menu) {
+		t.menuOff = len(t.menu)
+	}
+	t.mu.Unlock()
+	t.doRender()
+}
+
+func slicesEqual(a, b []SlashCommand) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // doRender menggambar seluruh layar (throttle 40 ms via renderThrottled).
@@ -484,11 +573,36 @@ func (t *TUI) build() string {
 		h = 8
 	}
 	body := h - 3 // header + status + input
-	menu := t.menu
-	if len(menu) > body-1 {
-		menu = menu[:body-1]
+	// Jendela menu slash/picker: scrollable (wheel) + indikator atas/bawah.
+	menuAll := t.menu
+	if t.menuOff >= len(menuAll) {
+		t.menuOff = 0
 	}
-	rows := body - len(menu)
+	visCap := body - 1 // ruang maksimum baris menu (sisanya viewport)
+	maxRows := visCap - 2
+	if maxRows < 1 {
+		maxRows = 1
+	}
+	winStart := t.menuOff
+	winEnd := winStart + maxRows
+	if winEnd > len(menuAll) {
+		winEnd = len(menuAll)
+	}
+	hasAbove := winStart > 0
+	hasBelow := winEnd < len(menuAll)
+	rows := body - (winEnd - winStart)
+	if hasAbove {
+		rows--
+	}
+	if hasBelow {
+		rows--
+	}
+	if rows < 1 {
+		rows = 1
+	}
+	t.menuBaseY = rows + 2 // baris layar 1-based dari baris menu pertama
+	t.menuWinStart = winStart
+	t.menuWinRows = winEnd - winStart
 
 	// Viewport = transkrip (dilipat sesuai lebar kini) + live; digeser oleh
 	// scroll dari ekor (scroll=0 ikuti ekor; scroll>0 menahan pandang ke atas).
@@ -526,7 +640,10 @@ func (t *TUI) build() string {
 
 	var b strings.Builder
 	b.WriteString("\x1b[H")
-	// Header: strip tab [1][2]… + tombol "+" + garis.
+	// Header: strip tab [1][2]… + tombol "+" + garis + tombol × di kanan.
+	// Setiap label terekam sebagai zona klik (dipakai handler mouse).
+	t.headerZones = t.headerZones[:0]
+	col := 0
 	var tb strings.Builder
 	for i, tab := range t.tabs {
 		label := tab.title
@@ -541,19 +658,36 @@ func (t *TUI) build() string {
 		} else {
 			tb.WriteString(Dim("[" + label + "]"))
 		}
+		// zona dihitung dari lebar TERLIHAT ("─ " + label…)
+		start := 2 + col
+		col += visibleLen("[" + label + "]")
+		t.headerZones = append(t.headerZones, hdrZone{start, col + 1, 't', i})
 	}
 	if len(t.tabs) < 9 {
 		tb.WriteString(Dim("[+tab]"))
+		start := 2 + col
+		col += visibleLen("[+tab]")
+		t.headerZones = append(t.headerZones, hdrZone{start, col + 1, 'a', -1})
 	}
-	head := "─ " + tb.String() + " "
-	if pad := w - 2 - visibleLen(head); pad > 0 {
+	// tombol tutup × di sisi kanan (bila >1 tab)
+	head := "─ " + tb.String()
+	if pad := w - 1 - visibleLen(head); pad > 0 {
 		head += strings.Repeat("─", pad)
+	}
+	if len(t.tabs) > 1 {
+		head += Bold(Red("×"))
+		t.headerZones = append(t.headerZones, hdrZone{w, w, 'c', -1})
 	}
 	b.WriteString(head + "\x1b[K\r\n")
 	for _, l := range view {
 		b.WriteString(l + "\x1b[K\r\n")
 	}
-	for i, m := range menu {
+	// Menu slash / picker: window [winStart,winEnd) + indikator scroll.
+	if hasAbove {
+		b.WriteString(" │ " + Dim(fmt.Sprintf("▲ %d pilihan di atas (scroll sentuh)", winStart)) + "\x1b[K\r\n")
+	}
+	for i := winStart; i < winEnd; i++ {
+		m := menuAll[i]
 		var row string
 		if i == t.sel {
 			row = " │ " + Cyan("❯") + " " + Bold(Cyan(m.Cmd)) + " " + Dim(m.Desc)
@@ -561,6 +695,9 @@ func (t *TUI) build() string {
 			row = " │   " + m.Cmd + " " + Dim(m.Desc)
 		}
 		b.WriteString(row + "\x1b[K\r\n")
+	}
+	if hasBelow {
+		b.WriteString(" │ " + Dim(fmt.Sprintf("▼ %d pilihan di bawah (scroll sentuh)", len(menuAll)-winEnd)) + "\x1b[K\r\n")
 	}
 	// Bar status: indikator scroll + animasi berpikir + status dasar,
 	// dipotong di sisi KANAN agar identitas sesi tetap terbaca.
@@ -710,6 +847,63 @@ func ReadInputTUI(t *TUI, prefix string) (string, error) {
 				ctrlBHandler()
 			}
 			sync()
+		case kMouse:
+			btn := int(ev.r)
+			var x, y int
+			var rel bool
+			fmt.Sscanf(ev.text, "%d;%d;%v", &x, &y, &rel)
+			t.mu.Lock()
+			zones := append([]hdrZone(nil), t.headerZones...)
+			mBaseY, mWinStart, mWinRows := t.menuBaseY, t.menuWinStart, t.menuWinRows
+			t.mu.Unlock()
+			// wheel: sentuh ke bawah = pandang ke atas (lawatan lama),
+			// sentuh ke atas = kembali ke ekor — sesuai gerakan jari.
+			switch btn {
+			case 64: // wheel up → ekor/ke bawah
+				if e.menu {
+					t.ScrollMenu(-1)
+				} else {
+					t.Scroll(3)
+				}
+			case 65: // wheel down → ke atas (lawatan lama)
+				if e.menu {
+					t.ScrollMenu(1)
+				} else {
+					t.Scroll(-3)
+				}
+			case 35: // hover (gerakan tanpa tombol): pilih baris menu
+				if e.menu && len(e.match) > 0 && y >= mBaseY && y < mBaseY+mWinRows {
+					t.sel = mWinStart + (y - mBaseY)
+					sync()
+				}
+			case 0, 1, 2: // klik kiri/tengah/kanan
+				if y == 1 { // bar header: zona tab / +tab / ×
+					for _, z := range zones {
+						if x >= z.start && x <= z.end {
+							switch z.kind {
+							case 't':
+								t.SwitchTab(z.tab)
+							case 'a':
+								t.AddTab()
+							case 'c':
+								t.CloseTab(t.Current())
+							}
+							e.buf = nil
+							sync()
+							return "", nil // setelah kelola tab, minta input baru
+						}
+					}
+				} else if e.menu && len(e.match) > 0 && y >= mBaseY && y < mBaseY+mWinRows && !rel {
+					// klik baris menu = langsung pilih & jalankan
+					t.sel = mWinStart + (y - mBaseY)
+					e.buf = []rune(e.match[t.sel].Cmd)
+					sync()
+					restore()
+					t.ScrollTo(0)
+					t.SetInput(prefix, nil, nil, 0)
+					return string(e.buf), nil
+				}
+			}
 		case kCtrlD:
 			if len(e.buf) == 0 {
 				restore()
