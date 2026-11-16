@@ -124,6 +124,10 @@ func Yellow(s string) string { return c("33", s) }
 // Cyan untuk elemen HUD utama.
 func Cyan(s string) string { return c("36", s) }
 
+// Sel menandai elemen yang sedang disorot (hover/pilihan) dengan video
+// terbalik — dipakai tab header & baris menu agar kursor mouse terasa hidup.
+func Sel(s string) string { return c("7", s) }
+
 // Magenta untuk penanda fase operasi.
 func Magenta(s string) string { return c("35", s) }
 

@@ -946,16 +946,17 @@ func handleKonfigurasiAPIKey(cfg *config.Config, engine *llm.Client, readInput f
 		return
 	}
 	newURL := cfg.APIURL
+	newProvider := cfg.Provider // jangan sentuh cfg sebelum semua langkah selesai
 	if val != cfg.APIURL {
 		if p := cariPreset(val); p.Name != "" {
 			newURL = p.URL
-			cfg.Provider = p.Name
+			newProvider = p.Name
 		} else {
 			newURL = val
 			if !strings.HasPrefix(newURL, "http://") && !strings.HasPrefix(newURL, "https://") {
 				newURL = "http://" + newURL
 			}
-			cfg.Provider = ""
+			newProvider = ""
 		}
 	}
 	appendMsg("  ❶ URL  → " + ui.Cyan(newURL))
@@ -970,7 +971,9 @@ func handleKonfigurasiAPIKey(cfg *config.Config, engine *llm.Client, readInput f
 		masked = masked[:4] + "..." + masked[len(masked)-4:]
 	}
 	appendMsg("  Kunci aktif : " + ui.Dim(masked))
-	if cfg.Provider == "ollama" || cfg.Provider == "vllm" {
+	// Deteksi lokal memakai provider TUJUAN, bukan cfg yang belum berubah.
+	lokalTujuan := newProvider == "ollama" || newProvider == "vllm"
+	if lokalTujuan {
 		appendMsg(ui.Dim("  Engine LOKAL biasanya TANPA kunci — tekan Enter untuk melewati."))
 	} else {
 		appendMsg(ui.Dim("  Tempel kunci dari provider (Groq: gsk_… · OpenAI: sk-… · OpenRouter: sk-or-v1-… · NVIDIA: nvapi-…)."))
@@ -1052,6 +1055,7 @@ func handleKonfigurasiAPIKey(cfg *config.Config, engine *llm.Client, readInput f
 	appendMsg("  ❸ MODEL → " + ui.Cyan(newModel))
 	appendMsg("")
 
+	cfg.Provider = newProvider
 	cfg.APIURL = newURL
 	cfg.APIKey = newKey
 	cfg.Model = newModel
@@ -1100,7 +1104,6 @@ func handleKonfigurasiModelLokal(cfg *config.Config, engine *llm.Client, readInp
 	}
 	newURL := strings.TrimRight(val, "/")
 	appendMsg("  Server → " + ui.Cyan(newURL))
-	cfg.Provider = "lokal"
 
 	// Tarik daftar model dari server lokal.
 	appendMsg("  Mengambil daftar model …")
@@ -1144,6 +1147,7 @@ func handleKonfigurasiModelLokal(cfg *config.Config, engine *llm.Client, readInp
 		return
 	}
 
+	cfg.Provider = "lokal"
 	cfg.APIURL = newURL
 	cfg.APIKey = "" // lokal: tanpa kunci
 	cfg.Model = newModel
@@ -1259,6 +1263,7 @@ func handlePilihModel(arg string, cfg *config.Config, engine *llm.Client, readIn
 
 func handleAPIURL(arg string, cfg *config.Config, engine *llm.Client, readInput func(string) (string, error), appendMsg func(string), pick pickFn) {
 	chosenURL := strings.TrimSpace(arg)
+	newProvider := cfg.Provider
 	if chosenURL == "" {
 		items := make([]ui.PickerItem, 0, len(config.ProviderPresets))
 		for _, p := range config.ProviderPresets {
@@ -1277,9 +1282,10 @@ func handleAPIURL(arg string, cfg *config.Config, engine *llm.Client, readInput 
 		}
 		if p := cariPreset(val); p.Name != "" {
 			chosenURL = p.URL
-			cfg.Provider = p.Name
+			newProvider = p.Name
 		} else {
 			chosenURL = val
+			newProvider = ""
 		}
 	}
 
@@ -1292,6 +1298,7 @@ func handleAPIURL(arg string, cfg *config.Config, engine *llm.Client, readInput 
 		chosenURL = "http://" + chosenURL
 	}
 
+	cfg.Provider = newProvider
 	cfg.APIURL = chosenURL
 	if engine != nil {
 		engine.URL = chosenURL

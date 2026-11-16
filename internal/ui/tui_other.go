@@ -72,6 +72,9 @@ func (t *TUI) SetTabHook(func(int)) {}
 // hanya ada di mode layar penuh unix.
 func (t *TUI) SetTabCloseHook(func(int)) {}
 
+// SetHover tidak melakukan apa-apa (stub) — sorotan mouse hanya di unix.
+func (t *TUI) SetHover(tab int, closeBtn, addBtn bool) {}
+
 // SetTabTitle tidak melakukan apa-apa (stub).
 func (t *TUI) SetTabTitle(string) {}
 

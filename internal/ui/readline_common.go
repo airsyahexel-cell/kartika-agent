@@ -77,22 +77,35 @@ func filterSlash(buf []rune) []SlashCommand {
 
 // lineEditor menyimpan status satu sesi ketik (buffer + menu saran).
 type lineEditor struct {
-	prefix string
-	buf    []rune
-	menu   bool
-	sel    int
-	match  []SlashCommand
+	prefix   string
+	buf      []rune
+	menu     bool
+	sel      int
+	match    []SlashCommand
+	matchFor string // teks buffer saat daftar saran terakhir dihitung
 }
 
 // recompute memperbarui daftar saran & visibilitas menu setelah buffer berubah.
+// Pilihan (sel) hanya direset bila teks buffer berubah — sehingga panah ↑↓
+// yang hanya menggeser sorotan tidak ikut dibatalkan oleh render ulang.
 func (e *lineEditor) recompute() {
-	e.match = nil
-	e.sel = 0
 	s := string(e.buf)
+	teksBerubah := s != e.matchFor
+	e.matchFor = s
+	e.match = nil
+	if teksBerubah {
+		e.sel = 0
+	}
 	if strings.HasPrefix(s, "/") {
 		e.match = filterSlash(e.buf)
 	}
 	e.menu = len(e.match) > 0
+	if e.sel >= len(e.match) {
+		e.sel = 0
+	}
+	if e.sel < 0 {
+		e.sel = 0
+	}
 }
 
 // cursorCol mengembalikan posisi kolom kursor di akhir buffer pada baris input.

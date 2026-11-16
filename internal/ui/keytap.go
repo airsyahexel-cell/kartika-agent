@@ -313,6 +313,8 @@ func handleMouseSGR(body string) {
 		} else {
 			t.Scroll(-3)
 		}
+	case 35: // hover (gerakan tanpa tombol) — tab header hidup
+		handleMouseHover(x, y)
 	case 0, 1, 2: // klik
 		if rel {
 			return // hanya proses tekan (bukan lepas)
@@ -335,4 +337,21 @@ func handleMouseSGR(body string) {
 		_ = mBaseY
 		_ = mWinRows
 	}
+}
+
+// handleMouseHover menangani peristiwa hover (gerakan tanpa tombol) saat
+// engine bekerja: menyorot tab header agar terasa hidup seperti picker.
+func handleMouseHover(x, y int) {
+	t := activeTUI
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	zones := append([]hdrZone(nil), t.headerZones...)
+	t.mu.Unlock()
+	if y == 1 {
+		t.setHoverFromHeader(x, zones)
+		return
+	}
+	t.SetHover(-1, false, false)
 }

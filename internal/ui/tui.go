@@ -216,10 +216,14 @@ type TUI struct {
 
 	// peta zona klik header (dipusat saat build): area tab & tombol
 	headerZones  []hdrZone
-	menuBaseY    int // baris layar 1-based dari baris menu pertama
-	menuOff      int // jendela scroll menu slash / picker
-	menuWinStart int // index penuh baris menu pertama yang terlihat
-	menuWinRows  int // jumlah baris menu yang terlihat
+	menuBaseY    int  // baris layar 1-based dari baris menu pertama
+	menuOff      int  // jendela scroll menu slash / picker
+	menuManual   bool // true bila operator menggeser jendela sendiri (wheel)
+	menuWinStart int  // index penuh baris menu pertama yang terlihat
+	menuWinRows  int  // jumlah baris menu yang terlihat
+	hoverTab     int  // index tab yang disorot kursor (-1 = tidak ada)
+	hoverClose   bool // kursor di atas tombol ×
+	hoverAdd     bool // kursor di atas tombol [+tab]
 }
 
 // hdrZone adalah area klik di bar header: tab (pindah), add (+tab), close (×).
@@ -483,11 +487,45 @@ func (t *TUI) CommitLive() {
 	t.doRender()
 }
 
+// SetHover menandai elemen header yang sedang disorot kursor. tab=-1
+// berarti tidak ada tab; close/add menandai tombol mana yang tersorot.
+func (t *TUI) SetHover(tab int, closeBtn, addBtn bool) {
+	t.mu.Lock()
+	changed := t.hoverTab != tab || t.hoverClose != closeBtn || t.hoverAdd != addBtn
+	t.hoverTab, t.hoverClose, t.hoverAdd = tab, closeBtn, addBtn
+	t.mu.Unlock()
+	if changed {
+		t.doRender()
+	}
+}
+
+// setHoverFromHeader menerjemahkan posisi X kursor pada bar header menjadi
+// zona tab / × / [+tab] yang disorot.
+func (t *TUI) setHoverFromHeader(x int, zones []hdrZone) {
+	tab, closeBtn, addBtn := -1, false, false
+	for _, z := range zones {
+		if x < z.start || x > z.end {
+			continue
+		}
+		switch z.kind {
+		case 't':
+			tab = z.tab
+		case 'c':
+			closeBtn, tab = true, z.tab
+		case 'a':
+			addBtn = true
+		}
+		break
+	}
+	t.SetHover(tab, closeBtn, addBtn)
+}
+
 // SetInput dipanggil editor input setiap perubahan buffer/menu.
 func (t *TUI) SetInput(prefix string, buf []rune, menu []SlashCommand, sel int) {
 	t.mu.Lock()
 	if !slicesEqual(menu, t.menu) { // menu baru → reset jendela scroll
 		t.menuOff = 0
+		t.menuManual = false
 	}
 	t.prefix = prefix
 	t.buf = append([]rune(nil), buf...)
@@ -498,7 +536,8 @@ func (t *TUI) SetInput(prefix string, buf []rune, menu []SlashCommand, sel int) 
 }
 
 // ScrollMenu menggeser jendela menu slash/picker (delta ±1 per gerakan
-// wheel). Batas dijaga saat build.
+// wheel). Batas dijaga saat build. Penggeseran manual (wheel) mengalahkan
+// perilaku "ikuti pilihan" sampai menu berikutnya dibuka.
 func (t *TUI) ScrollMenu(delta int) {
 	t.mu.Lock()
 	t.menuOff += delta
@@ -508,6 +547,7 @@ func (t *TUI) ScrollMenu(delta int) {
 	if t.menuOff > len(t.menu) {
 		t.menuOff = len(t.menu)
 	}
+	t.menuManual = true
 	t.mu.Unlock()
 	t.doRender()
 }
@@ -574,14 +614,31 @@ func (t *TUI) build() string {
 	}
 	body := h - 3 // header + status + input
 	// Jendela menu slash/picker: scrollable (wheel) + indikator atas/bawah.
+	// Tanpa geseran manual, jendela MENGIKUTI pilihan aktif sehingga baris
+	// yang disorot panah ↑↓ tidak pernah menghilang dari layar.
 	menuAll := t.menu
-	if t.menuOff >= len(menuAll) {
-		t.menuOff = 0
-	}
 	visCap := body - 1 // ruang maksimum baris menu (sisanya viewport)
 	maxRows := visCap - 2
 	if maxRows < 1 {
 		maxRows = 1
+	}
+	if len(menuAll) > 0 && !t.menuManual {
+		switch {
+		case t.sel < t.menuOff:
+			t.menuOff = t.sel
+		case t.sel >= t.menuOff+maxRows:
+			t.menuOff = t.sel - maxRows + 1
+		}
+	}
+	if t.menuOff < 0 {
+		t.menuOff = 0
+	}
+	maxOff := len(menuAll) - maxRows
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	if t.menuOff > maxOff {
+		t.menuOff = maxOff
 	}
 	winStart := t.menuOff
 	winEnd := winStart + maxRows
@@ -640,11 +697,12 @@ func (t *TUI) build() string {
 
 	var b strings.Builder
 	b.WriteString("\x1b[H")
-	// Header: strip tab [1][2]… + tombol "+" + garis + tombol × di kanan.
-	// Setiap label terekam sebagai zona klik (dipakai handler mouse).
+	// Header: strip tab [1][2]… + tombol "+" + tombol × menempel pada tab
+	// aktif. Setiap label terekam sebagai zona klik (dipakai handler mouse).
 	t.headerZones = t.headerZones[:0]
 	col := 0
 	var tb strings.Builder
+	hoverTab := t.hoverTab // -1 = tidak ada
 	for i, tab := range t.tabs {
 		label := tab.title
 		if label == "" {
@@ -653,30 +711,44 @@ func (t *TUI) build() string {
 		if len(t.tabs) > 1 {
 			label = " " + label + " "
 		}
-		if i == t.curIdx {
+		switch {
+		case i == t.curIdx:
 			tb.WriteString(Bold(Cyan("[" + label + "]")))
-		} else {
+		case i == hoverTab:
+			tb.WriteString(Sel(Dim("[" + label + "]")))
+		default:
 			tb.WriteString(Dim("[" + label + "]"))
 		}
 		// zona dihitung dari lebar TERLIHAT ("─ " + label…)
 		start := 2 + col
 		col += visibleLen("[" + label + "]")
 		t.headerZones = append(t.headerZones, hdrZone{start, col + 1, 't', i})
+		// Tombol × menempel tepat di samping tab yang sedang aktif —
+		// jelas tab mana yang akan ditutup.
+		if i == t.curIdx && len(t.tabs) > 1 {
+			startX := 2 + col
+			if t.hoverClose {
+				tb.WriteString(Sel(Bold(Red(" ×"))))
+			} else {
+				tb.WriteString(Bold(Red(" ×")))
+			}
+			col += visibleLen(" ×")
+			t.headerZones = append(t.headerZones, hdrZone{startX, col + 1, 'c', i})
+		}
 	}
 	if len(t.tabs) < 9 {
-		tb.WriteString(Dim("[+tab]"))
+		if t.hoverAdd {
+			tb.WriteString(Sel(Dim("[+tab]")))
+		} else {
+			tb.WriteString(Dim("[+tab]"))
+		}
 		start := 2 + col
 		col += visibleLen("[+tab]")
 		t.headerZones = append(t.headerZones, hdrZone{start, col + 1, 'a', -1})
 	}
-	// tombol tutup × di sisi kanan (bila >1 tab)
 	head := "─ " + tb.String()
 	if pad := w - 1 - visibleLen(head); pad > 0 {
 		head += strings.Repeat("─", pad)
-	}
-	if len(t.tabs) > 1 {
-		head += Bold(Red("×"))
-		t.headerZones = append(t.headerZones, hdrZone{w, w, 'c', -1})
 	}
 	b.WriteString(head + "\x1b[K\r\n")
 	for _, l := range view {
@@ -871,10 +943,15 @@ func ReadInputTUI(t *TUI, prefix string) (string, error) {
 				} else {
 					t.Scroll(-3)
 				}
-			case 35: // hover (gerakan tanpa tombol): pilih baris menu
-				if e.menu && len(e.match) > 0 && y >= mBaseY && y < mBaseY+mWinRows {
-					t.sel = mWinStart + (y - mBaseY)
-					sync()
+			case 35: // hover (gerakan tanpa tombol): header = tab hidup, isi = baris menu
+				if y == 1 {
+					t.setHoverFromHeader(x, zones)
+				} else {
+					t.SetHover(-1, false, false)
+					if e.menu && len(e.match) > 0 && y >= mBaseY && y < mBaseY+mWinRows {
+						t.sel = mWinStart + (y - mBaseY)
+						sync()
+					}
 				}
 			case 0, 1, 2: // klik kiri/tengah/kanan
 				if y == 1 { // bar header: zona tab / +tab / ×
