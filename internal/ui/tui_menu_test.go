@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -71,12 +72,19 @@ func TestJendelaMenuGeserManual(t *testing.T) {
 	}
 }
 
-// TestTombolTutupMenempelTabAktif memastikan tombol × berada tepat di
-// samping label tab yang aktif (bukan di ujung kanan layar).
+// TestTombolTutupMenempelTabAktif memastikan tombol × berada DI DALAM
+// bracket tab yang aktif — ditampilkan sebagai [ sesi ×] — bukan di ujung
+// kanan layar dan bukan menggantung di luar bracket.
 func TestTombolTutupMenempelTabAktif(t *testing.T) {
 	tu := &TUI{w: 60, h: 20, hoverTab: -1,
 		tabs: []*tabBuf{{title: "AAAA"}, {title: "BBBB"}}, curIdx: 1}
 	scr := tu.build()
+
+	// Header harus memuat pola "[ BBBB ×]" (spasi boleh bervariasi).
+	plain := regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`).ReplaceAllString(scr, "")
+	if !strings.Contains(plain, "[ BBBB ×]") {
+		t.Fatalf("× tidak berada di dalam bracket tab aktif.\nHeader: %q", plain)
+	}
 
 	var tabZ, closeZ hdrZone
 	for _, z := range tu.headerZones {
@@ -92,15 +100,15 @@ func TestTombolTutupMenempelTabAktif(t *testing.T) {
 	if closeZ.end == 0 {
 		t.Fatal("zona tombol tutup × tidak ditemukan")
 	}
-	// × harus mulai tepat setelah tab aktif berakhir (maksimal 1 kolom jeda).
-	if closeZ.start < tabZ.end || closeZ.start > tabZ.end+2 {
-		t.Fatalf("× tidak menempel pada tab aktif: tab=%v close=%v", tabZ, closeZ)
+	// × berada di dalam bracket tab aktif: kolomnya harus di ANTARA awal dan
+	// akhir zona tab (zona tab kini mencakup "×]" supaya tidak ada kolom mati).
+	if closeZ.start <= tabZ.start || closeZ.end >= tabZ.end {
+		t.Fatalf("× tidak berada di dalam bracket tab aktif: tab=%v close=%v", tabZ, closeZ)
 	}
 	// dan jauh dari ujung kanan layar (perilaku lama).
 	if closeZ.start > tu.w-5 {
 		t.Fatalf("× masih menempel di ujung kanan layar: start=%d w=%d", closeZ.start, tu.w)
 	}
-	_ = strings.Contains(scr, "×")
 }
 
 // TestHoverTabHeader memastikan hover mouse di bar header menyorot tab
@@ -134,5 +142,43 @@ func TestHoverTabHeader(t *testing.T) {
 	tu.SetHover(-1, false, false)
 	if tu.hoverTab != -1 {
 		t.Fatalf("sorotan tidak dilepas, hoverTab=%d", tu.hoverTab)
+	}
+}
+
+// TestMenuIndexAtBarisLayar memastikan pemetaan baris layar → indeks pilihan
+// menu konsisten dengan jendela yang sedang tampil. Ini akar bug lama: hover
+// memakai perhitungan sendiri dan menyetel t.sel (yang ditimpa sync()),
+// sehingga baris menu tidak pernah menyala saat kursor digerakkan.
+func TestMenuIndexAtBarisLayar(t *testing.T) {
+	var menu []SlashCommand
+	for i := 0; i < 20; i++ {
+		menu = append(menu, SlashCommand{Cmd: "/cmd" + string(rune('a'+i)), Desc: "x"})
+	}
+	tu := &TUI{w: 80, h: 16, tabs: []*tabBuf{{title: "s"}}, menu: menu, sel: 12}
+	tu.build()
+
+	base, start, rows := tu.menuBaseY, tu.menuWinStart, tu.menuWinRows
+	if rows <= 0 || base <= 0 {
+		t.Fatalf("geometri menu tidak terisi: base=%d rows=%d", base, rows)
+	}
+	if tu.sel < start || tu.sel >= start+rows {
+		t.Fatalf("pilihan %d di luar jendela [%d,%d)", tu.sel, start, start+rows)
+	}
+
+	// Setiap baris jendela harus memetakan ke indeks yang benar.
+	for y := base; y < base+rows; y++ {
+		idx, ok := tu.menuIndexAt(y)
+		if !ok {
+			t.Fatalf("baris %d seharusnya baris menu", y)
+		}
+		if idx != start+(y-base) {
+			t.Fatalf("baris %d memetakan ke %d, harusnya %d", y, idx, start+(y-base))
+		}
+	}
+	// Di luar jendela: bukan baris menu.
+	for _, y := range []int{1, base - 1, base + rows, base + rows + 5} {
+		if _, ok := tu.menuIndexAt(y); ok {
+			t.Fatalf("baris %d seharusnya BUKAN baris menu", y)
+		}
 	}
 }

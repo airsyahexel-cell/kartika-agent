@@ -35,9 +35,14 @@ import (
 
 // version adalah versi yang dilaporkan HUD & dipakai /update untuk
 // membandingkan rilis. Workflow rilis menimpanya lewat
-// -ldflags "-X main.version=<tag>", jadi nilai di sini cukup mengikuti
-// tag rilis terakhir yang sudah ditandai di repo.
-var version = "1.2.0"
+// -ldflags "-X main.version=<tag>", jadi nilai di sini adalah cadangan
+// untuk build tanpa ldflags (mis. `go build` polos).
+//
+// PENTING: nilai ini HARUS ikut naik setiap kali tag rilis dibuat. Bila
+// tertinggal, binary hasil `go build` polos akan melaporkan versi lama —
+// dan /update akan menawarkan "pembaruan" ke rilis yang sebenarnya lebih
+// tua dari kode yang sedang dijalankan (efek downgrade).
+var version = "1.3.1"
 
 func main() {
 	mission := flag.String("mission", "", "Direktif chat — jalankan sekali lalu keluar (mode headless/CI)")
@@ -177,6 +182,7 @@ func main() {
 	sesiID := newSessionID()
 	sesiMulai := time.Now()
 	resumeNotice := ""
+	var resumeMsgs []llm.Message // percakapan lama — diputar ulang ke transkrip
 	if lanjut {
 		var msgs []llm.Message
 		var err error
@@ -192,6 +198,7 @@ func main() {
 		}
 		if err == nil && len(msgs) > 0 {
 			ag.Restore(msgs)
+			resumeMsgs = msgs
 			sesiMulai = time.Now()
 			resumeNotice = fmt.Sprintf("sesi dilanjutkan: %s — %d giliran percakapan diingat", sesiID, len(msgs)/2)
 		} else if err == nil && len(msgs) == 0 {
@@ -322,6 +329,11 @@ func main() {
 		if resumeNotice != "" {
 			tui.Append(ui.Dim("  " + resumeNotice))
 		}
+		// Putar ulang percakapan lama agar benar-benar TERLIHAT di layar,
+		// bukan sekadar diingat model.
+		if len(resumeMsgs) > 0 {
+			tampilkanRiwayat(resumeMsgs, tui.Append)
+		}
 		if up := updateBanner(); up != "" {
 			tui.Append(up)
 		}
@@ -371,17 +383,37 @@ func main() {
 				printModules(reg)
 				continue
 			case "/mcp", "mcp":
-				printMCPStatus(cfg, mcpClients)
+				mcpArg := argSetelahPerintah(line, "/mcp", "mcp")
+				berubah := false
+				if mcpArg == "" {
+					berubah = handleMCPStatusAtauMenu(cfg, mcpClients, func(p string) (string, error) {
+						return ui.ReadInputTUIBatal(tui, p)
+					}, tui.Append, pickerTUI)
+				} else {
+					berubah = handleMCP(mcpArg, cfg, func(p string) (string, error) {
+						return ui.ReadInputTUIBatal(tui, p)
+					}, tui.Append, pickerTUI)
+				}
+				if berubah {
+					// mcp.json berubah → muat ulang server & daftarkan tools baru.
+					mcpClients = segarkanMCP(cfg, reg, tui.Append)
+				}
+				tui.SetStatus(statusIdle(sesiID))
 				continue
 			case "/skill", "skill":
-				if f := strings.Fields(line); len(f) > 1 {
-					printSkillDoc(strings.Join(f[1:], " "))
+				skillArg := argSetelahPerintah(line, "/skill", "skill")
+				if skillArg != "" && !adalahSubPerintahSkill(skillArg) {
+					printSkillDoc(skillArg)
+				} else if skillArg != "" {
+					handleSkill(skillArg, func(p string) (string, error) {
+						return ui.ReadInputTUIBatal(tui, p)
+					}, tui.Append, pickerTUI)
 				} else {
-					printSkillList()
+					menuSkill(func(p string) (string, error) {
+						return ui.ReadInputTUIBatal(tui, p)
+					}, tui.Append, pickerTUI)
 				}
-				continue
-			case "/pikir", "/reasoning":
-				toggleReason()
+				tui.SetStatus(statusIdle(sesiID))
 				continue
 			case "/bersih", "/clear":
 				tui.Clear()
@@ -431,14 +463,8 @@ func main() {
 				continue
 			}
 			if strings.HasPrefix(line, "/") {
-				// Perintah berargumen: /skill <nama>
+				// Perintah berargumen ditangani di bawah (setelah blok prefix).
 				low := strings.ToLower(line)
-				if strings.HasPrefix(low, "/skill ") || strings.HasPrefix(low, "skill ") {
-					if f := strings.Fields(line); len(f) > 1 {
-						printSkillDoc(strings.Join(f[1:], " "))
-					}
-					continue
-				}
 				if strings.HasPrefix(low, "/konfigurasi-api-key") || strings.HasPrefix(low, "/masukan-api-key") || strings.HasPrefix(low, "/konfigurasi") {
 					handleKonfigurasiAPIKey(cfg, engine, func(p string) (string, error) {
 						return ui.ReadInputTUI(tui, p)
@@ -476,6 +502,28 @@ func main() {
 					handleAPIURL(arg, cfg, engine, func(p string) (string, error) {
 						return ui.ReadInputTUI(tui, p)
 					}, tui.Append, pickerTUI)
+					tui.SetStatus(statusIdle(sesiID))
+					continue
+				}
+				if strings.HasPrefix(low, "/mcp ") || strings.HasPrefix(low, "mcp ") {
+					mcpArg := argSetelahPerintah(line, "/mcp", "mcp")
+					if handleMCP(mcpArg, cfg, func(p string) (string, error) {
+						return ui.ReadInputTUIBatal(tui, p)
+					}, tui.Append, pickerTUI) {
+						mcpClients = segarkanMCP(cfg, reg, tui.Append)
+					}
+					tui.SetStatus(statusIdle(sesiID))
+					continue
+				}
+				if strings.HasPrefix(low, "/skill ") || strings.HasPrefix(low, "skill ") {
+					skillArg := argSetelahPerintah(line, "/skill", "skill")
+					if adalahSubPerintahSkill(skillArg) {
+						handleSkill(skillArg, func(p string) (string, error) {
+							return ui.ReadInputTUIBatal(tui, p)
+						}, tui.Append, pickerTUI)
+					} else {
+						printSkillDoc(skillArg)
+					}
 					tui.SetStatus(statusIdle(sesiID))
 					continue
 				}
@@ -569,6 +617,13 @@ func main() {
 
 	// ---------- CLI POLOS (pipe/CI atau terminal tanpa dukungan TUI) ----------
 	ui.PrintPoskoHelp()
+	if resumeNotice != "" {
+		ui.Info(ui.Dim("  " + resumeNotice))
+	}
+	// CLI polos: cetak ulang riwayat agar sesi lama terlihat utuh.
+	if len(resumeMsgs) > 0 {
+		tampilkanRiwayat(resumeMsgs, func(s string) { fmt.Println(s) })
+	}
 	if up := updateBanner(); up != "" {
 		ui.Info(up)
 	}
@@ -600,13 +655,26 @@ func main() {
 			printModules(reg)
 			continue
 		case "/mcp", "mcp":
-			printMCPStatus(cfg, mcpClients)
+			mcpArg := argSetelahPerintah(line, "/mcp", "mcp")
+			if mcpArg == "" {
+				handleMCPStatusAtauMenu(cfg, mcpClients, func(p string) (string, error) {
+					return ui.ReadInput(p)
+				}, func(s string) { fmt.Println(s) }, nil)
+			} else {
+				handleMCP(mcpArg, cfg, func(p string) (string, error) {
+					return ui.ReadInput(p)
+				}, func(s string) { fmt.Println(s) }, nil)
+			}
+			mcpClients = segarkanMCP(cfg, reg, func(s string) { fmt.Println(s) })
 			continue
 		case "/skill", "skill":
-			if f := strings.Fields(line); len(f) > 1 {
-				printSkillDoc(strings.Join(f[1:], " "))
+			skillArg := argSetelahPerintah(line, "/skill", "skill")
+			if skillArg != "" && !adalahSubPerintahSkill(skillArg) {
+				printSkillDoc(skillArg)
 			} else {
-				printSkillList()
+				handleSkill(skillArg, func(p string) (string, error) {
+					return ui.ReadInput(p)
+				}, func(s string) { fmt.Println(s) }, nil)
 			}
 			continue
 		case "/pikir", "/reasoning":
@@ -657,14 +725,8 @@ func main() {
 			continue
 		}
 		if strings.HasPrefix(line, "/") {
-			// Perintah berargumen: /skill <nama>
+			// Perintah berargumen ditangani sesudah blok prefix.
 			low := strings.ToLower(line)
-			if strings.HasPrefix(low, "/skill ") || strings.HasPrefix(low, "skill ") {
-				if f := strings.Fields(line); len(f) > 1 {
-					printSkillDoc(strings.Join(f[1:], " "))
-				}
-				continue
-			}
 			if strings.HasPrefix(low, "/konfigurasi-api-key") || strings.HasPrefix(low, "/masukan-api-key") || strings.HasPrefix(low, "/konfigurasi") {
 				handleKonfigurasiAPIKey(cfg, engine, func(p string) (string, error) {
 					return ui.ReadInput(p)
@@ -699,6 +761,26 @@ func main() {
 				handleAPIURL(arg, cfg, engine, func(p string) (string, error) {
 					return ui.ReadInput(p)
 				}, func(s string) { fmt.Println(s) }, nil)
+				continue
+			}
+			if strings.HasPrefix(low, "/mcp ") || strings.HasPrefix(low, "mcp ") {
+				mcpArg := argSetelahPerintah(line, "/mcp", "mcp")
+				if handleMCP(mcpArg, cfg, func(p string) (string, error) {
+					return ui.ReadInput(p)
+				}, func(s string) { fmt.Println(s) }, nil) {
+					mcpClients = segarkanMCP(cfg, reg, func(s string) { fmt.Println(s) })
+				}
+				continue
+			}
+			if strings.HasPrefix(low, "/skill ") || strings.HasPrefix(low, "skill ") {
+				skillArg := argSetelahPerintah(line, "/skill", "skill")
+				if adalahSubPerintahSkill(skillArg) {
+					handleSkill(skillArg, func(p string) (string, error) {
+						return ui.ReadInput(p)
+					}, func(s string) { fmt.Println(s) }, nil)
+				} else {
+					printSkillDoc(skillArg)
+				}
 				continue
 			}
 			ui.Warn("Perintah tidak dikenali: " + line + " — ketik /bantuan untuk daftar perintah.")
@@ -1352,6 +1434,11 @@ func handleUpdate(arg string, readInput func(string) (string, error), appendMsg 
 		return
 	}
 	appendMsg(ui.Yellow("↑ Tersedia pembaruan: v" + version + " → " + rel.Tag))
+	// Aset rilis yang melaporkan versi lebih tua dari tag-nya menandakan
+	// build tanpa -X main.version — peringatkan agar tidak bingung lagi.
+	if asset, has := rel.FindAsset(); has && asset.Digest == "" {
+		appendMsg(ui.Dim("  (rilis ini tidak menyertakan checksum SHA-256)"))
+	}
 	if notes := update.NotesRingkas(rel.Notes, 10); notes != "" {
 		appendMsg("")
 		appendMsg(ui.Dim("  Catatan rilis:"))
@@ -1416,6 +1503,74 @@ func handleUpdate(arg string, readInput func(string) (string, error), appendMsg 
 	appendMsg("")
 }
 
+// milestoneReporter melaporkan kemajuan unduhan per 10% lewat appendMsg.
+// appendMsg menambah BARIS BARU (bukan menggambar ulang di tempat), jadi
+// laporan dibuat hemat: hanya saat persentase melewati kelipatan 10, plus
+// satu pesan awal dan satu akhir. Tanpa ini layar tampak membeku selama
+// unduhan 6 MB berlangsung.
+type milestoneReporter struct {
+	msg      func(string)
+	total    int64
+	lastStep int // persentase terakhir yang dilaporkan (kelipatan 10)
+	awal     bool
+}
+
+func newMilestoneReporter(msg func(string), total int64) *milestoneReporter {
+	return &milestoneReporter{msg: msg, total: total, lastStep: -1}
+}
+
+func (m *milestoneReporter) update(done, total int64) {
+	if total > 0 {
+		m.total = total
+	}
+	if m.total <= 0 {
+		// Server tanpa Content-Length (jarang pada GitHub): cukup kabari
+		// sekali saat mulai, sisanya disampaikan saat selesai.
+		if !m.awal {
+			m.awal = true
+			m.msg(ui.Dim("    … menerima data dari server"))
+		}
+		return
+	}
+	pct := int(done * 100 / m.total)
+	step := pct / 10 * 10
+	if step <= m.lastStep {
+		return
+	}
+	m.lastStep = step
+	if step >= 100 {
+		return // ringkasan akhir dicetak oleh finish()
+	}
+	m.msg(ui.Dim(fmt.Sprintf("    %s %3d%%  %s / %s",
+		progressBar(step, 20), step,
+		update.HumanSize(done), update.HumanSize(m.total))))
+}
+
+// finish memastikan 100% dilaporkan sekali, tepat sebelum baris hasil.
+func (m *milestoneReporter) finish() {
+	if m.total <= 0 || m.lastStep >= 100 {
+		return
+	}
+	m.lastStep = 100
+	m.msg(ui.Dim(fmt.Sprintf("    %s 100%%  %s",
+		progressBar(100, 20), update.HumanSize(m.total))))
+}
+
+// progressBar menggambar bar blok selebar n untuk persentase pct.
+func progressBar(pct, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	isi := pct * n / 100
+	return "[" + strings.Repeat("█", isi) + strings.Repeat("░", n-isi) + "]"
+}
+
 // pasangBinaryRilis mengunduh aset rilis, memverifikasi SHA-256 dari digest
 // rilis, lalu mengganti binary yang sedang berjalan secara atomik.
 func pasangBinaryRilis(rel *update.Release, asset update.Asset, appendMsg func(string)) {
@@ -1435,9 +1590,14 @@ func pasangBinaryRilis(rel *update.Release, asset update.Asset, appendMsg func(s
 	defer os.RemoveAll(tmpDir)
 	tmpFile := filepath.Join(tmpDir, asset.Name)
 
-	n, err := update.Download(asset.URL, tmpFile, 300*time.Second)
+	// Pelaporan kemajuan: satu baris per 10% agar jelas tanpa membanjiri
+	// transkrip (appendMsg menambah baris, bukan menggambar di tempat).
+	bar := newMilestoneReporter(appendMsg, asset.Size)
+	n, err := update.DownloadProgress(asset.URL, tmpFile, 300*time.Second, bar.update)
+	bar.finish()
 	if err != nil {
 		appendMsg(ui.Red("✗ Unduhan gagal: " + err.Error()))
+		appendMsg(ui.Dim("  Saran: periksa koneksi, lalu ulangi /update."))
 		return
 	}
 	appendMsg(ui.Green("✓ Terunduh: " + update.HumanSize(n)))
@@ -1699,6 +1859,32 @@ func globalEnvPath() string {
 }
 
 // printMCPStatus menampilkan server MCP online dan cara menambahkannya.
+// argSetelahPerintah mengambil teks argumen dari baris perintah slash.
+// "/mcp tambah x" dengan nama "/mcp" → "tambah x".
+func argSetelahPerintah(line, denganSlash, tanpaSlash string) string {
+	s := strings.TrimSpace(line)
+	for _, p := range []string{denganSlash, tanpaSlash} {
+		if strings.HasPrefix(strings.ToLower(s), strings.ToLower(p)) {
+			return strings.TrimSpace(s[len(p):])
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
+// adalahSubPerintahSkill melaporkan apakah argumen /skill merupakan aksi
+// pustaka (pasang/perbarui) alih-alih nama skill yang ingin dibaca.
+func adalahSubPerintahSkill(arg string) bool {
+	f := strings.Fields(strings.ToLower(arg))
+	if len(f) == 0 {
+		return false
+	}
+	switch f[0] {
+	case "pasang", "install", "add", "tambah", "perbarui", "update", "pull", "upgrade":
+		return true
+	}
+	return false
+}
+
 func printMCPStatus(cfg *config.Config, clients []*mcp.Client) {
 	ui.Info("")
 	ui.Info(ui.Bold(ui.Cyan("STATUS MCP")))

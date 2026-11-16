@@ -50,8 +50,10 @@ func NewKeyTap() *KeyTap {
 		defer close(k.done)
 		defer func() {
 			fmt.Print("\x1b[?2004l")
+			DisableMouse() // jangan biarkan gerakan kursor tercetak sebagai teks
 			_ = tcSet(int(os.Stdin.Fd()), old)
 		}()
+		EnableMouse()
 		r := bufio.NewReader(os.Stdin)
 		var buf []rune
 		render := func() {

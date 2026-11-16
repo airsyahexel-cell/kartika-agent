@@ -327,6 +327,7 @@ func readRawLine(prefix string) (string, error) {
 	}
 	restore := func() {
 		fmt.Print("\x1b[?2004l") // matikan bracketed paste
+		DisableMouse()           // jangan biarkan gerakan kursor tercetak sebagai teks
 		_ = tcSet(int(os.Stdin.Fd()), old)
 	}
 	e := &lineEditor{prefix: prefix}
@@ -344,6 +345,7 @@ func readRawLine(prefix string) (string, error) {
 	}
 
 	fmt.Println(Cyan("╭" + strings.Repeat("─", w-2) + "╮"))
+	EnableMouse()            // hover/klik baris menu saran
 	fmt.Print("\x1b[?2004h") // aktifkan bracketed paste — paste TIDAK otomatis dieksekusi
 	e.recompute()
 	e.draw()

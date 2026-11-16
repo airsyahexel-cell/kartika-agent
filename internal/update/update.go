@@ -243,6 +243,14 @@ func LatestCached() (*Release, error) {
 
 // Download mengunduh url ke dst dan mengembalikan jumlah byte tertulis.
 func Download(url, dst string, timeout time.Duration) (int64, error) {
+	return DownloadProgress(url, dst, timeout, nil)
+}
+
+// DownloadProgress sama dengan Download, tetapi memanggil onProgress secara
+// berkala (maksimal ~10x/detik) dengan jumlah byte yang sudah diterima dan
+// total byte (0 bila server tidak mengirim Content-Length). Dipakai /update
+// agar operator melihat kemajuan unduhan, bukan layar yang membeku.
+func DownloadProgress(url, dst string, timeout time.Duration, onProgress func(done, total int64)) (int64, error) {
 	if timeout <= 0 {
 		timeout = 120 * time.Second
 	}
@@ -267,7 +275,12 @@ func Download(url, dst string, timeout time.Duration) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	n, err := io.Copy(f, resp.Body)
+	total := resp.ContentLength
+	var src io.Reader = resp.Body
+	if onProgress != nil {
+		src = &progressReader{r: resp.Body, total: total, cb: onProgress}
+	}
+	n, err := io.Copy(f, src)
 	cerr := f.Close()
 	if err != nil {
 		return n, err
@@ -275,10 +288,33 @@ func Download(url, dst string, timeout time.Duration) (int64, error) {
 	if cerr != nil {
 		return n, cerr
 	}
-	if resp.ContentLength > 0 && n != resp.ContentLength {
-		return n, fmt.Errorf("unduhan terpotong: %d dari %d byte", n, resp.ContentLength)
+	if total > 0 && n != total {
+		return n, fmt.Errorf("unduhan terpotong: %d dari %d byte", n, total)
+	}
+	if onProgress != nil {
+		onProgress(n, total)
 	}
 	return n, nil
+}
+
+// progressReader melaporkan kemajuan unduhan ke callback, dibatasi ~10
+// panggilan per detik agar tidak membanjiri layar.
+type progressReader struct {
+	r     io.Reader
+	done  int64
+	total int64
+	cb    func(done, total int64)
+	last  time.Time
+}
+
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	p.done += int64(n)
+	if p.cb != nil && (p.last.IsZero() || time.Since(p.last) >= 100*time.Millisecond || err != nil) {
+		p.last = time.Now()
+		p.cb(p.done, p.total)
+	}
+	return n, err
 }
 
 // Sum256 menghitung SHA-256 sebuah berkas dalam bentuk hex.

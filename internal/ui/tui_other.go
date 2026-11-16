@@ -16,6 +16,12 @@ func EnterAlt() {}
 // ExitAlt tidak melakukan apa-apa pada platform ini.
 func ExitAlt() {}
 
+// EnableMouse tidak melakukan apa-apa pada platform ini.
+func EnableMouse() {}
+
+// DisableMouse tidak melakukan apa-apa pada platform ini.
+func DisableMouse() {}
+
 // TUIAvailable selalu false — mode layar penuh tidak tersedia.
 func TUIAvailable() bool { return false }
 
@@ -83,6 +89,18 @@ func (t *TUI) Current() int { return 0 }
 
 // ReadInputTUI membaca satu baris polos pada platform ini.
 func ReadInputTUI(t *TUI, prefix string) (string, error) {
+	return readLinePlain(prefix)
+}
+
+// ReadInputTUIBatal sama dengan ReadInputTUI pada platform ini — Ctrl+C
+// tetap berarti keluar karena tidak ada handler sinyal TUI di sini, jadi
+// pembatalan per-langkah tidak bisa dibedakan dan tidak ditawarkan.
+func ReadInputTUIBatal(t *TUI, prefix string) (string, error) {
+	return readLinePlain(prefix)
+}
+
+// readLinePlain membaca satu baris dari stdin dengan prompt sederhana.
+func readLinePlain(prefix string) (string, error) {
 	fmt.Print(Prompt(prefix + " "))
 	r := bufio.NewReader(os.Stdin)
 	line, err := r.ReadString('\n')

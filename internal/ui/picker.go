@@ -28,7 +28,11 @@ func ReadPickerTUI(title string, items []PickerItem) (int, bool) {
 	if err != nil {
 		return -1, false
 	}
-	defer tcSet(int(os.Stdin.Fd()), old)
+	defer func() {
+		DisableMouse()
+		_ = tcSet(int(os.Stdin.Fd()), old)
+	}()
+	EnableMouse()
 
 	sel, winStart := 0, 0
 	draw := func() {

@@ -128,6 +128,11 @@ func Cyan(s string) string { return c("36", s) }
 // terbalik — dipakai tab header & baris menu agar kursor mouse terasa hidup.
 func Sel(s string) string { return c("7", s) }
 
+// Underline memberi garis bawah — dipakai tab AKTIF saat kursor melintas,
+// sebab tab aktif sudah berwarna tegas sehingga sorotan video-terbalik
+// tidak akan terlihat bedanya.
+func Underline(s string) string { return c("4", s) }
+
 // Magenta untuk penanda fase operasi.
 func Magenta(s string) string { return c("35", s) }
 

@@ -158,3 +158,40 @@ func loadSessionFile(path string) (string, []llm.Message, error) {
 	}
 	return s.ID, msgs, nil
 }
+
+// tampilkanRiwayat memutar ulang percakapan tersimpan ke transkrip sehingga
+// saat sesi lama dibuka (kartika --lanjut <id>) operator melihat SEMUA
+// percakapannya, bukan hanya catatan "N giliran diingat". Tanpa ini memori
+// model sudah pulih tetapi layar tampak kosong — membingungkan.
+//
+// Pesan tool/kosong dilewati; pesan user ditandai "❯" seperti input asli.
+func tampilkanRiwayat(msgs []llm.Message, appendMsg func(string)) {
+	if appendMsg == nil {
+		return
+	}
+	adaIsi := false
+	for _, m := range msgs {
+		isi := strings.TrimSpace(m.Content)
+		if isi == "" {
+			continue
+		}
+		switch m.Role {
+		case "user":
+			appendMsg(ui.Bold(ui.Cyan("❯ ")) + ui.Bold(isi))
+			adaIsi = true
+		case "assistant":
+			appendMsg(isi)
+			adaIsi = true
+		case "system":
+			// Instruksi sistem tidak perlu ditampilkan ke operator.
+		default:
+			// tool / nama lain: tampilkan redup agar jejak eksekusi tetap ada.
+			appendMsg(ui.Dim(isi))
+			adaIsi = true
+		}
+	}
+	if adaIsi {
+		appendMsg("")
+		appendMsg(ui.Dim("── akhir riwayat sesi sebelumnya · lanjutkan percakapan di bawah ──"))
+	}
+}

@@ -23,15 +23,36 @@ import (
 var altActive bool
 
 // EnterAlt membuka layar alternatif (seperti aplikasi TUI penuh).
-// Mode mouse (klik + hover + scroll sentuh) diaktifkan bersamaan.
+// Mode mouse TIDAK diaktifkan di sini: pelaporan gerakan mouse hanya boleh
+// menyala selama ada pembaca stdin dalam mode raw. Bila dinyalakan terus,
+// setiap gerakan kursor mencetak urutan ESC[<…M mentah ke layar ketika
+// terminal kembali ke mode normal (echo menyala) — mis. selama unduhan
+// /update berlangsung.
 func EnterAlt() {
 	if !useColor || !IsTTY() {
 		return
 	}
 	altActive = true
 	fmt.Print("\x1b[?1049h\x1b[H\x1b[2J")
+}
+
+// EnableMouse menyalakan pelaporan mouse (klik + hover + scroll sentuh).
+// Hanya dipanggil oleh pembaca yang sedang menunggu tombol.
+func EnableMouse() {
+	if !useColor || !IsTTY() {
+		return
+	}
 	// 1000 = klik, 1003 = hover semua gerakan, 1006 = encoding SGR
 	fmt.Print("\x1b[?1000h\x1b[?1003h\x1b[?1006h")
+}
+
+// DisableMouse mematikan pelaporan mouse. Wajib dipanggil sebelum terminal
+// dikembalikan ke mode normal agar gerakan kursor tidak tercetak sebagai teks.
+func DisableMouse() {
+	if !useColor || !IsTTY() {
+		return
+	}
+	fmt.Print("\x1b[?1006l\x1b[?1003l\x1b[?1000l")
 }
 
 // ExitAlt menutup layar alternatif dan mengembalikan konten lama.
@@ -41,7 +62,7 @@ func ExitAlt() {
 		return
 	}
 	altActive = false
-	fmt.Print("\x1b[?1006l\x1b[?1003l\x1b[?1000l") // matikan mouse
+	DisableMouse()
 	fmt.Print("\x1b[?1049l")
 }
 
@@ -238,7 +259,7 @@ var activeTUI *TUI // referensi untuk KeyTap (mouse saat engine bekerja)
 // NewTUI membangun layar penuh (panggil setelah EnterAlt) dengan satu tab.
 func NewTUI() *TUI {
 	w, h := termSize()
-	t := &TUI{w: w, h: h, tabs: []*tabBuf{{}}}
+	t := &TUI{w: w, h: h, tabs: []*tabBuf{{}}, hoverTab: -1}
 	activeTUI = t
 	return t
 }
@@ -501,8 +522,19 @@ func (t *TUI) SetHover(tab int, closeBtn, addBtn bool) {
 
 // setHoverFromHeader menerjemahkan posisi X kursor pada bar header menjadi
 // zona tab / × / [+tab] yang disorot.
+//
+// Zona tab mencakup seluruh bracket termasuk kolom × (agar tidak ada kolom
+// "mati" di dalam bracket), jadi zona × harus MENANG saat keduanya cocok —
+// kalau tidak, mengarahkan kursor tepat ke × hanya akan terlihat sebagai
+// hover tab biasa.
 func (t *TUI) setHoverFromHeader(x int, zones []hdrZone) {
-	tab, closeBtn, addBtn := -1, false, false
+	for _, z := range zones {
+		if z.kind == 'c' && x >= z.start && x <= z.end {
+			t.SetHover(z.tab, true, false)
+			return
+		}
+	}
+	tab, addBtn := -1, false
 	for _, z := range zones {
 		if x < z.start || x > z.end {
 			continue
@@ -510,14 +542,36 @@ func (t *TUI) setHoverFromHeader(x int, zones []hdrZone) {
 		switch z.kind {
 		case 't':
 			tab = z.tab
-		case 'c':
-			closeBtn, tab = true, z.tab
 		case 'a':
 			addBtn = true
 		}
 		break
 	}
-	t.SetHover(tab, closeBtn, addBtn)
+	t.SetHover(tab, false, addBtn)
+}
+
+// menuIndexAt menerjemahkan baris layar (1-based) hasil hit SGR mouse
+// menjadi indeks pilihan menu slash yang terlihat. ok=false berarti baris
+// itu bukan baris menu (mis. transkrip, bar status, atau baris input).
+//
+// Pemanggil WAJIB menulis hasilnya ke e.sel milik lineEditor lalu memanggil
+// sync(): sync() menyerahkan e.sel ke TUI, jadi menyetel t.sel langsung akan
+// langsung tertimpa kembali ke pilihan lama.
+func (t *TUI) menuIndexAt(y int) (int, bool) {
+	t.mu.Lock()
+	base, start, rows, n := t.menuBaseY, t.menuWinStart, t.menuWinRows, len(t.menu)
+	t.mu.Unlock()
+	if rows <= 0 || base <= 0 {
+		return 0, false
+	}
+	if y < base || y >= base+rows {
+		return 0, false
+	}
+	idx := start + (y - base)
+	if idx < 0 || idx >= n {
+		return 0, false
+	}
+	return idx, true
 }
 
 // SetInput dipanggil editor input setiap perubahan buffer/menu.
@@ -700,41 +754,69 @@ func (t *TUI) build() string {
 	// Header: strip tab [1][2]… + tombol "+" + tombol × menempel pada tab
 	// aktif. Setiap label terekam sebagai zona klik (dipakai handler mouse).
 	t.headerZones = t.headerZones[:0]
-	col := 0
+	col := 2 // header diawali "─ " (2 kolom), jadi konten mulai kolom ke-3
 	var tb strings.Builder
 	hoverTab := t.hoverTab // -1 = tidak ada
+	multi := len(t.tabs) > 1
 	for i, tab := range t.tabs {
 		label := tab.title
 		if label == "" {
 			label = fmt.Sprintf("TAB %d", i+1)
 		}
-		if len(t.tabs) > 1 {
+		if multi {
 			label = " " + label + " "
 		}
+		aktif := i == t.curIdx
+		tutup := aktif && multi // × hanya pada tab aktif & saat >1 tab
+
+		// "[" + label  (label sudah memuat spasi pembuka/penutup)
+		kepala := "[" + label
 		switch {
-		case i == t.curIdx:
-			tb.WriteString(Bold(Cyan("[" + label + "]")))
+		case aktif && i == hoverTab:
+			// Tab aktif sudah tegas warnanya; video-terbalik nyaris tak
+			// terlihat bedanya, jadi pakai garis bawah sebagai umpan balik.
+			tb.WriteString(Bold(Cyan(Underline(kepala))))
+		case aktif:
+			tb.WriteString(Bold(Cyan(kepala)))
 		case i == hoverTab:
-			tb.WriteString(Sel(Dim("[" + label + "]")))
+			tb.WriteString(Sel(Dim(kepala)))
 		default:
-			tb.WriteString(Dim("[" + label + "]"))
+			tb.WriteString(Dim(kepala))
 		}
-		// zona dihitung dari lebar TERLIHAT ("─ " + label…)
-		start := 2 + col
-		col += visibleLen("[" + label + "]")
-		t.headerZones = append(t.headerZones, hdrZone{start, col + 1, 't', i})
-		// Tombol × menempel tepat di samping tab yang sedang aktif —
-		// jelas tab mana yang akan ditutup.
-		if i == t.curIdx && len(t.tabs) > 1 {
-			startX := 2 + col
+		start := col + 1
+		col += visibleLen(kepala)
+		// Zona hover/klik tab: dari "[" sampai "]" — seluruh bracket. Bila
+		// tab ini aktif, tombol × berada DI DALAM rentang ini dan direkam
+		// sebagai zona sendiri; setHoverFromHeader memprioritaskan zona ×.
+		tabZone := len(t.headerZones)
+		t.headerZones = append(t.headerZones, hdrZone{start, col, 't', i})
+
+		if tutup {
+			// × DI DALAM bracket, tepat setelah nama sesi → [ sesi ×]
+			startX := col + 1
 			if t.hoverClose {
-				tb.WriteString(Sel(Bold(Red(" ×"))))
+				tb.WriteString(Sel(Bold(Red("×"))))
 			} else {
-				tb.WriteString(Bold(Red(" ×")))
+				tb.WriteString(Bold(Red("×")))
 			}
-			col += visibleLen(" ×")
-			t.headerZones = append(t.headerZones, hdrZone{startX, col + 1, 'c', i})
+			col += visibleLen("×")
+			t.headerZones = append(t.headerZones, hdrZone{startX, col, 'c', i})
 		}
+
+		// "]" penutup — mewarnai sama dengan labelnya agar terlihat satu unit.
+		switch {
+		case aktif && i == hoverTab:
+			tb.WriteString(Bold(Cyan(Underline("]"))))
+		case aktif:
+			tb.WriteString(Bold(Cyan("]")))
+		case i == hoverTab:
+			tb.WriteString(Sel(Dim("]")))
+		default:
+			tb.WriteString(Dim("]"))
+		}
+		col += visibleLen("]")
+		// Perpanjang zona tab agar mencakup "]" penutup.
+		t.headerZones[tabZone].end = col
 	}
 	if len(t.tabs) < 9 {
 		if t.hoverAdd {
@@ -742,9 +824,9 @@ func (t *TUI) build() string {
 		} else {
 			tb.WriteString(Dim("[+tab]"))
 		}
-		start := 2 + col
+		start := col + 1
 		col += visibleLen("[+tab]")
-		t.headerZones = append(t.headerZones, hdrZone{start, col + 1, 'a', -1})
+		t.headerZones = append(t.headerZones, hdrZone{start, col, 'a', -1})
 	}
 	head := "─ " + tb.String()
 	if pad := w - 1 - visibleLen(head); pad > 0 {
@@ -833,6 +915,19 @@ func truncRunesVisible(s string, n int) string {
 // slash dirender oleh TUI di atas bar status. Interaksi sama dengan editor
 // kotak input: '/' memunculkan menu, ▲▼ memilih, Tab/→ melengkapi.
 func ReadInputTUI(t *TUI, prefix string) (string, error) {
+	return readInputTUI(t, prefix, false)
+}
+
+// ReadInputTUIBatal sama dengan ReadInputTUI, tetapi Ctrl+C hanya
+// MEMBATALKAN langkah ini (mengembalikan ErrBatal) — bukan menghentikan
+// program. Dipakai seluruh sub-alur (wizard konfigurasi, pasang skill,
+// tambah server MCP) agar operator bisa keluar dari wizard tanpa kehilangan
+// sesi chat.
+func ReadInputTUIBatal(t *TUI, prefix string) (string, error) {
+	return readInputTUI(t, prefix, true)
+}
+
+func readInputTUI(t *TUI, prefix string, bolehBatal bool) (string, error) {
 	old, err := makeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		// Terminal tidak mendukung mode raw — fallback polos.
@@ -846,6 +941,7 @@ func ReadInputTUI(t *TUI, prefix string) (string, error) {
 	}
 	restore := func() {
 		fmt.Print("\x1b[?2004l") // matikan bracketed paste
+		DisableMouse()           // WAJIB sebelum echo menyala lagi
 		_ = tcSet(int(os.Stdin.Fd()), old)
 	}
 	e := &lineEditor{prefix: prefix}
@@ -854,6 +950,7 @@ func ReadInputTUI(t *TUI, prefix string) (string, error) {
 		t.SetInput(prefix, e.buf, e.match, e.sel)
 	}
 	sync()
+	EnableMouse()            // klik header & hover baris menu
 	fmt.Print("\x1b[?2004h") // aktifkan bracketed paste — paste TIDAK otomatis dieksekusi
 	r := bufio.NewReader(os.Stdin)
 	for {
@@ -870,15 +967,17 @@ func ReadInputTUI(t *TUI, prefix string) (string, error) {
 				sync()
 				continue
 			}
-			if strings.TrimSpace(string(e.buf)) == "" {
-				e.buf = nil
-				sync()
-				continue
-			}
+			// Enter dengan kotak kosong tetap mengirim baris kosong. Ini
+			// penting untuk prompt berdefault: "[Y/n] ❯" — Enter berarti YA,
+			// dan "[y/N] ❯" — Enter berarti tidak. Sebelumnya Enter kosong
+			// dibuang di sini, sehingga prompt seperti itu menggantung dan
+			// operator mengira wizard-nya rusak. Di layar chat, baris kosong
+			// tidak melakukan apa-apa (loop utama: case "" → continue).
 			restore()
 			t.ScrollTo(0) // kembali ikuti ekor saat jawaban baru mengalir
+			out := string(e.buf)
 			t.SetInput(prefix, nil, nil, 0)
-			return string(e.buf), nil
+			return out, nil
 		case kBackspace:
 			if n := len(e.buf); n > 0 {
 				e.buf = e.buf[:n-1]
@@ -926,7 +1025,6 @@ func ReadInputTUI(t *TUI, prefix string) (string, error) {
 			fmt.Sscanf(ev.text, "%d;%d;%v", &x, &y, &rel)
 			t.mu.Lock()
 			zones := append([]hdrZone(nil), t.headerZones...)
-			mBaseY, mWinStart, mWinRows := t.menuBaseY, t.menuWinStart, t.menuWinRows
 			t.mu.Unlock()
 			// wheel: sentuh ke bawah = pandang ke atas (lawatan lama),
 			// sentuh ke atas = kembali ke ekor — sesuai gerakan jari.
@@ -948,37 +1046,56 @@ func ReadInputTUI(t *TUI, prefix string) (string, error) {
 					t.setHoverFromHeader(x, zones)
 				} else {
 					t.SetHover(-1, false, false)
-					if e.menu && len(e.match) > 0 && y >= mBaseY && y < mBaseY+mWinRows {
-						t.sel = mWinStart + (y - mBaseY)
-						sync()
+					if e.menu && len(e.match) > 0 {
+						if idx, ok := t.menuIndexAt(y); ok {
+							// Hover memindahkan pilihan editor — WAJIB lewat
+							// e.sel, sebab sync() menyerahkan e.sel ke TUI.
+							e.sel = idx
+							sync()
+						}
 					}
 				}
 			case 0, 1, 2: // klik kiri/tengah/kanan
 				if y == 1 { // bar header: zona tab / +tab / ×
-					for _, z := range zones {
-						if x >= z.start && x <= z.end {
-							switch z.kind {
-							case 't':
-								t.SwitchTab(z.tab)
-							case 'a':
-								t.AddTab()
-							case 'c':
-								t.CloseTab(t.Current())
-							}
-							e.buf = nil
-							sync()
-							return "", nil // setelah kelola tab, minta input baru
+					// × menang atas zona tab yang lebih lebar di kolom sama.
+					var kena *hdrZone
+					for i := range zones {
+						if zones[i].kind == 'c' && x >= zones[i].start && x <= zones[i].end {
+							kena = &zones[i]
+							break
 						}
 					}
-				} else if e.menu && len(e.match) > 0 && y >= mBaseY && y < mBaseY+mWinRows && !rel {
-					// klik baris menu = langsung pilih & jalankan
-					t.sel = mWinStart + (y - mBaseY)
-					e.buf = []rune(e.match[t.sel].Cmd)
-					sync()
-					restore()
-					t.ScrollTo(0)
-					t.SetInput(prefix, nil, nil, 0)
-					return string(e.buf), nil
+					if kena == nil {
+						for i := range zones {
+							if x >= zones[i].start && x <= zones[i].end {
+								kena = &zones[i]
+								break
+							}
+						}
+					}
+					if kena != nil && !rel {
+						switch kena.kind {
+						case 't':
+							t.SwitchTab(kena.tab)
+						case 'a':
+							t.AddTab()
+						case 'c':
+							t.CloseTab(kena.tab)
+						}
+						e.buf = nil
+						sync()
+						return "", nil // setelah kelola tab, minta input baru
+					}
+				} else if e.menu && len(e.match) > 0 && !rel {
+					if idx, ok := t.menuIndexAt(y); ok {
+						// klik baris menu = langsung pilih & jalankan
+						e.sel = idx
+						pilih := e.match[idx].Cmd
+						restore()
+						t.ScrollTo(0)
+						t.SetInput(prefix, nil, nil, 0)
+						return pilih, nil
+					}
 				}
 			}
 		case kCtrlD:
@@ -987,6 +1104,16 @@ func ReadInputTUI(t *TUI, prefix string) (string, error) {
 				return "", io.EOF
 			}
 		case kCtrlC:
+			if bolehBatal {
+				// Di tengah sub-alur: Ctrl+C = batalkan langkah ini saja.
+				// Prompt & sesi chat tetap hidup — operator tidak terlempar
+				// keluar dari kartika hanya karena ingin membatalkan wizard.
+				restore()
+				t.SetInput(prefix, nil, nil, 0)
+				return "", ErrBatal
+			}
+			// Di layar chat utama: Ctrl+C tetap berarti keluar (disengaja),
+			// dan sudah dikonfirmasi lewat hint baris status.
 			restore()
 			if interruptHandler != nil {
 				interruptHandler()

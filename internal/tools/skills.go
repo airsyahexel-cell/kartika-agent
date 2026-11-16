@@ -167,7 +167,7 @@ func skillReadTool() *Tool {
 			"dan rantai eskalasi untuk kelas kerentanan tertentu (mis. ssrf, xss, idor, jwt, llm). " +
 			"Panggil SEBELUM menguji kelas yang belum dikuasai, dan ikuti gerbang buktinya (zero false positive).",
 		Schema: objSchema(map[string]any{
-			"name":     pStr("Nama skill (mis. hunt-ssrf, bug-bounty, triage-validation)"),
+			"name":      pStr("Nama skill (mis. hunt-ssrf, bug-bounty, triage-validation)"),
 			"max_chars": pInt("Batas karakter yang dikembalikan (default 20000)"),
 		}, []string{"name"}),
 		Fn: func(raw json.RawMessage) string {
@@ -209,8 +209,8 @@ func skillSearchTool() *Tool {
 			"Gunakan saat butuh payload untuk fingerprint teknologi tertentu atau kriteria bukti untuk kelas kerentanan. " +
 			"Hasil: nama skill + baris yang cocok, lalu dalami dengan skill_read.",
 		Schema: objSchema(map[string]any{
-			"query":  pStr("Kata kunci pencarian (mis. 'blind ssrf oob', 'jwt alg none', 'prototype pollution lodash')"),
-			"limit":  pInt("Batas jumlah hasil skill (default 8)"),
+			"query": pStr("Kata kunci pencarian (mis. 'blind ssrf oob', 'jwt alg none', 'prototype pollution lodash')"),
+			"limit": pInt("Batas jumlah hasil skill (default 8)"),
 		}, []string{"query"}),
 		Fn: func(raw json.RawMessage) string {
 			var a struct {
